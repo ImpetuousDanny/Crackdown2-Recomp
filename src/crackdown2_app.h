@@ -6,6 +6,8 @@
 
 #include <memory>
 
+#include <rex/cvar.h>
+#include <rex/input/mnk/mnk_input_driver.h>
 #include <rex/rex_app.h>
 #include <rex/ui/keybinds.h>
 
@@ -39,9 +41,22 @@ class Crackdown2App : public rex::ReXApp {
     graphics_menu_ = std::make_unique<GraphicsMenu>(drawer);
     rex::ui::RegisterBind("bind_graphics_menu", "F5", "Toggle the Graphics menu",
                           [this] { graphics_menu_->ToggleVisible(); });
+
+    // The SDK's keyboard/mouse driver only captures the mouse for the right
+    // stick while "mouse look" is active, and nothing in the runtime turns it
+    // on. Start with it on whenever --mnk_mouse is set, and let F6 release the
+    // cursor again for the ImGui overlays.
+    if (rex::cvar::Query<bool>("mnk_mouse")) {
+      rex::input::mnk::SetMouseLookActive(true);
+    }
+    rex::ui::RegisterBind("bind_mouse_look", "F6", "Toggle mouse look (right stick on the mouse)",
+                          [] { rex::input::mnk::SetMouseLookActive(!rex::input::mnk::IsMouseLookActive()); });
   }
 
-  void OnShutdown() override { rex::ui::UnregisterBind("bind_graphics_menu"); }
+  void OnShutdown() override {
+    rex::ui::UnregisterBind("bind_graphics_menu");
+    rex::ui::UnregisterBind("bind_mouse_look");
+  }
 
   // Override virtual hooks for customization:
   // void OnPostInitLogging() override {}

@@ -72,6 +72,8 @@ invalidation on GFx texture updates; had no effect, so the missing text is not a
 ## Menus and settings
 
 * **F4** opens the SDK's settings overlay (every cvar by category); **F3** the debug overlay.
+* **F6** toggles mouse look. With `--mnk_mouse=true` the mouse drives the right stick from startup; F6 releases the
+  cursor for the overlays and grabs it again.
 * **F5** opens this project's ImGui Graphics menu (`src/graphics_menu.h`): v-sync, fullscreen, FPS counter, 2x MSAA,
   upscaling filter, resolution, internal render scale, GPU backend.
 * **Native rows in the game's own Options > Display screen** (`src/native_menu.cpp`): V-SYNC, FULLSCREEN, FPS COUNTER,
