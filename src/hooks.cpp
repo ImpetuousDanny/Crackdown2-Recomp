@@ -1,6 +1,9 @@
 #include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/system/format.h>
+#include <rex/ppc.h>
+
+#include <cstring>
 
 // //https://github.com/rexglue/rexglue-sdk/issues/121
 // void FixBrokenSwitchTable_82812FA4(PPCRegister& r3) {
@@ -136,4 +139,44 @@ void LogResourceAddCheck(PPCRegister& r30, PPCRegister& r29) {
     auto pStrName = rex::memory::GuestPtr<const char*>(base, r30.u32);
 
     REXLOG_DEBUG("RWS::LoadResource: RWS::CResourceManager::Add will be called for '{}'", pStrName ? pStrName : "(null)");
+}
+//=============================================================================
+// Quiet replacements for kernel exports the SDK only stubs.
+//
+// The game calls KeSaveFloatingPointState / KeRestoreFloatingPointState every
+// frame from its render loop. The SDK only has logging stubs for them, and the
+// generated code calls the __imp__ symbols directly, so defining them here
+// makes the linker bind the game's calls to these instead of the runtime
+// library's copies. The export registry (used for ordinal lookups) is patched
+// as well from Crackdown2App::OnPreSetup. Both are no-ops on the host; the
+// save variant reports STATUS_SUCCESS like the real kernel.
+//=============================================================================
+
+extern "C" REX_FUNC(__imp__KeSaveFloatingPointState) {
+    (void)base;
+    ctx.r3.u64 = 0;  // STATUS_SUCCESS
+}
+
+extern "C" REX_FUNC(__imp__KeRestoreFloatingPointState) {
+    (void)base;
+    ctx.r3.u64 = 0;
+}
+
+void InstallQuietKernelStubs() {
+    struct { const char* name; PPCFunc* func; } replacements[] = {
+        { "__imp__KeSaveFloatingPointState", __imp__KeSaveFloatingPointState },
+        { "__imp__KeRestoreFloatingPointState", __imp__KeRestoreFloatingPointState },
+    };
+    for (auto& r : replacements) {
+        bool found = false;
+        for (auto& [name, func] : rex::ppc::GetPPCFuncRegistry()) {
+            if (std::strcmp(name, r.name) == 0) {
+                func = r.func;
+                found = true;
+            }
+        }
+        if (!found) {
+            rex::ppc::GetPPCFuncRegistry().emplace_back(r.name, r.func);
+        }
+    }
 }
