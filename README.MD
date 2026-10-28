@@ -49,7 +49,22 @@ Steps (PowerShell, from the repo folder):
     ```cmake --build --preset win-amd64-relwithdebinfo```
  4. Run: ```.\tools\run_cd2.ps1``` (add `-Update <extracted TU folder>` to mount it as `update:`; `-Backend vulkan` or `-Backend d3d12`
     picks the GPU backend, the default lets the plugin choose D3D12 on Windows). The xenos GPU plugin DLL is staged next to the
-    executable by CMake; the SDK's `rexruntime` DLL must be on PATH or copied next to it.
+    executable by CMake, and so is the SDK's `rexruntime` DLL (`rexruntimerd.dll` for RelWithDebInfo).
 
-Backend comparison on different GPUs is useful: on Linux only Vulkan is available and the UI text is missing there, so a D3D12
-run on a desktop GPU is the first thing to check.
+Verified 2026-10-28 on Windows 11 24H2 (Ryzen 9 7940HS / Radeon 780M) with LLVM 20.1.8, CMake 4.4.5, Ninja 1.13.2 and
+VS 2022 Build Tools 17.x (MSVC 14.44, Windows SDK 10.0.26100): run the configure/build from a `vcvars64.bat` prompt so clang
+finds the MSVC headers; a clean build takes about five minutes. The game must be started from an interactive desktop session:
+launched from a remote shell (WinRM/SSH, session 0) it logs `D3D12Presenter: Failed to create a swap chain for the HWND`.
+
+## Status (2026-10-28)
+
+| Platform / backend | Result |
+| --- | --- |
+| Windows 11, Radeon 780M, D3D12 (`--c2_gpu_backend=d3d12`, the Windows default) | Title screen renders correctly: full-colour city, logo and the "PRESS START" text, 30 FPS. |
+| Linux (Mint 22.3), Intel Iris Xe, Vulkan (Mesa ANV) | Boots to the Agency screen and the real-time intro at ~28 FPS, but all UI text and solid fills are missing and 3D scenes come out as single-channel tints (pure red / pure blue). |
+
+The Windows run proves the recompiled CPU side (same `generated/` code on both platforms) is fine; the Linux defects are in the
+GPU plugin's Vulkan path or the Intel driver. The SDK's prebuilt Windows plugin only contains the D3D12 backend, so the Vulkan
+backend cannot be cross-checked on Windows without building the SDK from source. Debug aids in this repo: `--c2_gfx_draw_log`
+(per-60-frame Scaleform draw counters, texture updates) and `--c2_force_texture_invalidate` (forces GPU texture-cache
+invalidation on GFx texture updates; had no effect, so the missing text is not a stale glyph atlas).
