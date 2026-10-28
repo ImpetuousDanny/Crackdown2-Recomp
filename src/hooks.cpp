@@ -4,6 +4,9 @@
 #include <rex/ppc.h>
 #include <rex/runtime.h>
 #include <rex/system/gpu_plugin.h>
+#include <rex/system/kernel_state.h>
+#include <rex/system/xmemory.h>
+#include <rex/thread/mutex.h>
 
 #include <cstring>
 #include <atomic>
@@ -38,6 +41,9 @@ REXCVAR_DEFINE_BOOL(c2_perf_graph_display, false, "Debug", "Displays the game's 
 REXCVAR_DEFINE_BOOL(c2_gdb_console_output_log, false, "Debug", "Log GDb_ConsoleOutput calls");
 REXCVAR_DEFINE_BOOL(c2_resource_log, false, "Debug", "Log what resources get loaded and what functions handle them.");
 REXCVAR_DEFINE_BOOL(c2_gfx_draw_log, false, "Debug", "Log Scaleform GFx renderer draw counts every 60 UI frames.");
+REXCVAR_DEFINE_BOOL(c2_force_texture_invalidate, false, "Debug",
+                    "Experiment: trigger GPU memory-watch callbacks over the physical heap whenever the GFx "
+                    "renderer unmaps or updates a texture (tests glyph-atlas invalidation).");
 REXCVAR_DEFINE_STRING(c2_gpu_backend, "any", "GPU",
                       "Backend to request from the GPU plugin: any, d3d12 or vulkan. 'any' takes the plugin's "
                       "preference (D3D12 on Windows, Vulkan elsewhere).");
@@ -217,6 +223,27 @@ void CountGfxDrawLineStrip(PPCRegister& r5) {
     g_gfx_line_count += r5.u32;   // lineCount
 }
 
+static std::atomic<uint32_t> g_gfx_tex_updates{0};
+
+static void ForceGpuTextureInvalidate() {
+    ++g_gfx_tex_updates;
+    if (!REXCVAR_GET(c2_force_texture_invalidate))
+        return;
+    auto* memory = rex::system::kernel_memory();
+    if (!memory)
+        return;
+    // Physical-heap virtual mirrors; snapped to pages inside, cheap when nothing is watched.
+    static const uint32_t ranges[] = { 0xA0000000u, 0xC0000000u, 0xE0000000u };
+    for (uint32_t start : ranges) {
+        auto lock = rex::thread::global_critical_region::AcquireDirect();
+        memory->TriggerPhysicalMemoryCallbacks(std::move(lock), start, 0x1FFFFFFFu, /*is_write=*/true,
+                                               /*unwatch_exact_range=*/false);
+    }
+}
+
+void OnGfxTextureUnmap(PPCRegister& r3) { (void)r3; ForceGpuTextureInvalidate(); }
+void OnGfxTextureUpdate(PPCRegister& r3) { (void)r3; ForceGpuTextureInvalidate(); }
+
 void LogGfxEndDisplay(PPCRegister& r3) {
     (void)r3;
     if (!REXCVAR_GET(c2_gfx_draw_log))
@@ -224,10 +251,10 @@ void LogGfxEndDisplay(PPCRegister& r3) {
     uint32_t frames = ++g_gfx_frames;
     if (frames % 60 != 0)
         return;
-    REXLOG_INFO("GFx: 60 UI frames: {} DrawIndexedTriList calls ({} tris), {} DrawBitmaps calls ({} bitmaps), {} line strip lines",
+    REXLOG_INFO("GFx: 60 UI frames: {} DrawIndexedTriList calls ({} tris), {} DrawBitmaps calls ({} bitmaps), {} line strip lines, {} texture unmap/updates",
                 g_gfx_tri_calls.exchange(0), g_gfx_tri_count.exchange(0),
                 g_gfx_bitmap_calls.exchange(0), g_gfx_bitmap_count.exchange(0),
-                g_gfx_line_count.exchange(0));
+                g_gfx_line_count.exchange(0), g_gfx_tex_updates.exchange(0));
 }
 
 //=============================================================================

@@ -57,3 +57,16 @@ registers = ["r5"]
 address = 0x82209218
 name = "LogGfxEndDisplay"
 registers = ["r3"]
+
+# Experiment: force GPU texture-cache invalidation whenever GFx unmaps or
+# updates a texture (--c2_force_texture_invalidate). Tests the theory that CPU
+# writes into the glyph atlas are not picked up by the texture cache.
+[[midasm_hook]]
+address = 0x82D93EC0
+name = "OnGfxTextureUnmap"
+registers = ["r3"]
+
+[[midasm_hook]]
+address = 0x82D94AE8
+name = "OnGfxTextureUpdate"
+registers = ["r3"]

@@ -16,7 +16,7 @@ call that aborts at startup).
 Only rows matched 'exact-strict' are used unless --include-loose is given.
 Addresses already named in the existing TOML are skipped. MSVC-mangled names
 are demangled with llvm-undname and reduced to Class__method identifiers;
-plain C names get a 'guest_' prefix so they never collide with host libc
+plain C names and unqualified C++ names get a 'guest_' prefix so they never collide with host libc/CRT
 symbols. Overloads that sanitize to the same identifier get the address as a
 suffix. The output is a TOML fragment to list in the manifest's `includes`.
 """
@@ -161,7 +161,9 @@ def main():
             if not q:
                 stats['failed'] += 1
                 continue
-            name = sanitize(q)
+            # Unqualified C++ names (terminate, swprintf_s, operator new...) live at
+            # global scope on the host too and collide with the MSVC CRT headers.
+            name = sanitize(q) if '::' in q else 'guest_' + sanitize(q)
             stats['mangled'] += 1
         else:
             name = 'guest_' + sanitize(raw)
