@@ -15,7 +15,18 @@
 ## To build:
  - Compile and install the rexglue SDK
  - Extract game disc and latest title update into the assets folder. (Including its xexp file)
- - Run the codegen by using the rexglue binary in the rexglue sdk install folder: ```rexglue codegen --max_jump_table_entries 519 crackdown2_config.toml```
- - ```cmake --preset win-amd64-debug; cmake --build out/build/win-amd64-debug``` in the main folder
+ - Run the codegen by using the rexglue binary in the rexglue sdk install folder, with the jump table limit raised
+   (rexglue 0.9.0 ignores `max_jump_table_entries` in the manifest and its CLI rejects it as a flag, so it has to be
+   set through the environment; the game has a 518-entry switch table in
+   `Anim_cProfileDataHand2HandFull_HandleAttributeData` and the default limit of 512 truncates it, which traps on load):
+   - Windows (PowerShell): ```$env:REX_MAX_JUMP_TABLE_ENTRIES=519; rexglue codegen crackdown2_manifest.toml```
+   - Linux: ```REX_MAX_JUMP_TABLE_ENTRIES=519 rexglue codegen crackdown2_manifest.toml```
+ - Windows: ```cmake --preset win-amd64-debug; cmake --build out/build/win-amd64-debug``` in the main folder
+ - Linux (clang 20 and the SDK install prefix on hand):
+   ```cmake --preset linux-amd64-relwithdebinfo -DCMAKE_PREFIX_PATH=<sdk-prefix> -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld```
+   then ```cmake --build out/build/linux-amd64-relwithdebinfo```
+ - Run with the GPU plugin enabled (it is off by default) and the extracted title update mounted as `update:`:
+   ```crackdown2 --game_data_root=<assets> --update_data_root=<extracted TU folder> --gpu_plugin=xenos```
+   On Linux put the SDK `lib` folder on `LD_LIBRARY_PATH`; the xenos plugin is staged next to the executable by CMake.
 
  # Status: In-game but not playable yet.

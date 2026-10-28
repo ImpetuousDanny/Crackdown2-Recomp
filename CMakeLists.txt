@@ -23,5 +23,5 @@ else()
     add_executable(crackdown2 ${CRACKDOWN2_SOURCES})
 endif()
 
-rexglue_setup_target(crackdown2)
+rexglue_setup_target(crackdown2 GPU_PLUGINS xenos)
 
