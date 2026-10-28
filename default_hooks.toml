@@ -34,3 +34,26 @@ address = 0x82F06A50
 name = "LogResourceAddCheck"  
 registers = ["r30", "r29"]
 
+
+# Scaleform GFx renderer draw counters (GRendererXbox360Impl entry points, see
+# tools/import_decomp_names.py / default_names.toml). Only log when
+# --c2_gfx_draw_log is set.
+[[midasm_hook]]
+address = 0x82D96640
+name = "CountGfxDrawIndexedTriList"
+registers = ["r8"]
+
+[[midasm_hook]]
+address = 0x82D969B0
+name = "CountGfxDrawBitmaps"
+registers = ["r7"]
+
+[[midasm_hook]]
+address = 0x82D968D0
+name = "CountGfxDrawLineStrip"
+registers = ["r5"]
+
+[[midasm_hook]]
+address = 0x82209218
+name = "LogGfxEndDisplay"
+registers = ["r3"]

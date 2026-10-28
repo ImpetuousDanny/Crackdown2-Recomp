@@ -15,4 +15,4 @@ exception_handler_funcs = []
 [entrypoint]
 file_path = "assets/default.xex"
 out_directory_path = "generated/default"
-includes = ["default_functions.toml","default_rexcrt.toml","default_hooks.toml"]
+includes = ["default_functions.toml","default_names.toml","default_rexcrt.toml","default_hooks.toml"]

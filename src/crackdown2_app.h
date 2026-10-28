@@ -7,6 +7,7 @@
 #include <rex/rex_app.h>
 
 void InstallQuietKernelStubs();
+void LoadRequestedGpuBackend(rex::RuntimeConfig& config);
 
 class Crackdown2App : public rex::ReXApp {
  public:
@@ -21,8 +22,8 @@ class Crackdown2App : public rex::ReXApp {
   // Swap the SDK's logging stubs for KeSave/RestoreFloatingPointState with
   // silent no-ops before the XEX import table is resolved (see hooks.cpp).
   void OnPreSetup(rex::RuntimeConfig& config) override {
-    (void)config;
     InstallQuietKernelStubs();
+    LoadRequestedGpuBackend(config);
   }
 
   // Override virtual hooks for customization:

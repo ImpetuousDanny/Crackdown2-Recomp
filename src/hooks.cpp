@@ -2,8 +2,11 @@
 #include <rex/hook.h>
 #include <rex/system/format.h>
 #include <rex/ppc.h>
+#include <rex/runtime.h>
+#include <rex/system/gpu_plugin.h>
 
 #include <cstring>
+#include <atomic>
 
 // //https://github.com/rexglue/rexglue-sdk/issues/121
 // void FixBrokenSwitchTable_82812FA4(PPCRegister& r3) {
@@ -34,6 +37,10 @@ REXCVAR_DEFINE_BOOL(c2_fps_display, false, "Debug", "Displays the game's debug f
 REXCVAR_DEFINE_BOOL(c2_perf_graph_display, false, "Debug", "Displays the game's debug performance graph overlay.");
 REXCVAR_DEFINE_BOOL(c2_gdb_console_output_log, false, "Debug", "Log GDb_ConsoleOutput calls");
 REXCVAR_DEFINE_BOOL(c2_resource_log, false, "Debug", "Log what resources get loaded and what functions handle them.");
+REXCVAR_DEFINE_BOOL(c2_gfx_draw_log, false, "Debug", "Log Scaleform GFx renderer draw counts every 60 UI frames.");
+REXCVAR_DEFINE_STRING(c2_gpu_backend, "any", "GPU",
+                      "Backend to request from the GPU plugin: any, d3d12 or vulkan. 'any' takes the plugin's "
+                      "preference (D3D12 on Windows, Vulkan elsewhere).");
 
 bool force_fps_display() { 
     return REXCVAR_GET(c2_fps_display);
@@ -178,5 +185,66 @@ void InstallQuietKernelStubs() {
         if (!found) {
             rex::ppc::GetPPCFuncRegistry().emplace_back(r.name, r.func);
         }
+    }
+}
+
+//=============================================================================
+// Scaleform GFx draw diagnostics (midasm hooks in default_hooks.toml).
+//
+// Counts what the game's GFx renderer (GRendererXbox360Impl) submits per UI
+// frame, to tell "UI not drawn by the game" apart from "UI drawn but lost in
+// GPU emulation".
+//=============================================================================
+
+static std::atomic<uint32_t> g_gfx_tri_count{0};
+static std::atomic<uint32_t> g_gfx_bitmap_count{0};
+static std::atomic<uint32_t> g_gfx_line_count{0};
+static std::atomic<uint32_t> g_gfx_tri_calls{0};
+static std::atomic<uint32_t> g_gfx_bitmap_calls{0};
+static std::atomic<uint32_t> g_gfx_frames{0};
+
+void CountGfxDrawIndexedTriList(PPCRegister& r8) {
+    g_gfx_tri_count += r8.u32;   // triangleCount
+    ++g_gfx_tri_calls;
+}
+
+void CountGfxDrawBitmaps(PPCRegister& r7) {
+    g_gfx_bitmap_count += r7.u32;   // count
+    ++g_gfx_bitmap_calls;
+}
+
+void CountGfxDrawLineStrip(PPCRegister& r5) {
+    g_gfx_line_count += r5.u32;   // lineCount
+}
+
+void LogGfxEndDisplay(PPCRegister& r3) {
+    (void)r3;
+    if (!REXCVAR_GET(c2_gfx_draw_log))
+        return;
+    uint32_t frames = ++g_gfx_frames;
+    if (frames % 60 != 0)
+        return;
+    REXLOG_INFO("GFx: 60 UI frames: {} DrawIndexedTriList calls ({} tris), {} DrawBitmaps calls ({} bitmaps), {} line strip lines",
+                g_gfx_tri_calls.exchange(0), g_gfx_tri_count.exchange(0),
+                g_gfx_bitmap_calls.exchange(0), g_gfx_bitmap_count.exchange(0),
+                g_gfx_line_count.exchange(0));
+}
+
+//=============================================================================
+// GPU backend override.
+//
+// ReXApp loads the plugin named by --gpu_plugin with backend "any", which picks
+// D3D12 on Windows. --c2_gpu_backend=vulkan|d3d12 loads it here instead so the
+// same build can be compared across backends (e.g. Vulkan on a Windows box).
+//=============================================================================
+
+void LoadRequestedGpuBackend(rex::RuntimeConfig& config) {
+    const std::string& backend = REXCVAR_GET(c2_gpu_backend);
+    if (config.graphics || config.gpu_plugin.empty() || backend.empty() || backend == "any")
+        return;
+    config.graphics = rex::system::LoadGpuPlugin(config.gpu_plugin, backend);
+    if (!config.graphics) {
+        REXLOG_ERROR("c2_gpu_backend: plugin '{}' has no '{}' backend; falling back to the plugin default",
+                     config.gpu_plugin, backend);
     }
 }
