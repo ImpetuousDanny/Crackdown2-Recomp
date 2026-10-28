@@ -15,6 +15,7 @@ include(generated/rexglue.cmake)
 set(CRACKDOWN2_SOURCES
     src/main.cpp
     src/hooks.cpp
+    src/native_menu.cpp
 )
 
 if(WIN32)

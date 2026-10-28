@@ -70,3 +70,12 @@ registers = ["r3"]
 address = 0x82D94AE8
 name = "OnGfxTextureUpdate"
 registers = ["r3"]
+
+
+# Native Graphics rows in the front-end Display Options screen (src/native_menu.cpp).
+# Fires just before the menu framework calls screen->OnMenuEvent(0, menu, row)
+# for an activated row: r3 = screen, r5 = menu index, r6 = selected row, r26 = menu.
+[[midasm_hook]]
+address = 0x828F1014
+name = "C2MenuItemActivated"
+registers = ["r3", "r5", "r6", "r26"]

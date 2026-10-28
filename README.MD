@@ -60,7 +60,7 @@ launched from a remote shell (WinRM/SSH, session 0) it logs `D3D12Presenter: Fai
 
 | Platform / backend | Result |
 | --- | --- |
-| Windows 11, Radeon 780M, D3D12 (`--c2_gpu_backend=d3d12`, the Windows default) | Title screen renders correctly: full-colour city, logo and the "PRESS START" text, 30 FPS. |
+| Windows 11, Radeon 780M, D3D12 (`--c2_gpu_backend=d3d12`, the Windows default) | Playable: title, menus, Agent Setup and co-op lobby at 63-80 FPS with `--vsync=false` (the 30 FPS seen before was the vsync cap); the intro cutscene at ~68 FPS; the opening Agency tutorial room with full HUD at ~35 FPS. Keyboard/mouse via `--mnk_mode --mnk_mouse=true` (Enter = Start, Space = A, Tab = Back, WASD / arrows = sticks). |
 | Linux (Mint 22.3), Intel Iris Xe, Vulkan (Mesa ANV) | Boots to the Agency screen and the real-time intro at ~28 FPS, but all UI text and solid fills are missing and 3D scenes come out as single-channel tints (pure red / pure blue). |
 
 The Windows run proves the recompiled CPU side (same `generated/` code on both platforms) is fine; the Linux defects are in the
@@ -68,3 +68,22 @@ GPU plugin's Vulkan path or the Intel driver. The SDK's prebuilt Windows plugin 
 backend cannot be cross-checked on Windows without building the SDK from source. Debug aids in this repo: `--c2_gfx_draw_log`
 (per-60-frame Scaleform draw counters, texture updates) and `--c2_force_texture_invalidate` (forces GPU texture-cache
 invalidation on GFx texture updates; had no effect, so the missing text is not a stale glyph atlas).
+
+## Menus and settings
+
+* **F4** opens the SDK's settings overlay (every cvar by category); **F3** the debug overlay.
+* **F5** opens this project's ImGui Graphics menu (`src/graphics_menu.h`): v-sync, fullscreen, FPS counter, 2x MSAA,
+  upscaling filter, resolution, internal render scale, GPU backend.
+* **Native rows in the game's own Options > Display screen** (`src/native_menu.cpp`): V-SYNC, FULLSCREEN, FPS COUNTER,
+  UPSCALING, 2X MSAA and INTERNAL RESOLUTION are appended after HUD OPACITY and GAMMA, drawn by the game's Scaleform menu
+  with its font, cursor, tooltips and sounds. Press A on a row to cycle its value; it writes the same cvars as the F5 menu.
+  The row framework is documented in `docs/native_menu.md` (component ids, vtable slots, item/text object layout, the
+  bctrl call sites used by the midasm hook). No game assets are modified.
+
+## Stability notes
+
+* The runtime's `InputSystem::RefreshDevices()` rebuilds its device list without locking on every XInput call, and the
+  game polls input from several guest threads; a Windows run died during a city load inside that vector's destructor
+  (STATUS_ILLEGAL_INSTRUCTION in rexruntimerd.dll). `src/hooks.cpp` now binds the game's `XamInputGetState` /
+  `GetCapabilities` / `SetState` / `GetKeystrokeEx` calls to wrappers that serialize them through one mutex before
+  forwarding to the runtime's originals.

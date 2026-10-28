@@ -195,6 +195,94 @@ void InstallQuietKernelStubs() {
 }
 
 //=============================================================================
+// Serialize guest XInput calls.
+//
+// Every XamInput* export runs InputSystem::RefreshDevices(), which rebuilds the
+// runtime's std::vector<DeviceInfo> with no locking. Crackdown 2 polls the pad
+// from more than one guest thread, and on Windows the game died during a city
+// load with STATUS_ILLEGAL_INSTRUCTION inside that vector's destructor
+// (rexruntimerd.dll, InputSystem::RefreshDevices -> _Destroy_range<DeviceInfo>:
+// the MSVC STL's corrupted-allocation trap). The generated code calls the
+// __imp__ symbols directly, so defining them here binds the game's calls to
+// these wrappers, which take one mutex and forward to the runtime's originals.
+//=============================================================================
+
+#include <mutex>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
+namespace {
+
+std::mutex g_xinput_mutex;
+PPCFunc* g_orig_XamInputGetState = nullptr;
+PPCFunc* g_orig_XamInputGetCapabilities = nullptr;
+PPCFunc* g_orig_XamInputSetState = nullptr;
+PPCFunc* g_orig_XamInputGetKeystrokeEx = nullptr;
+
+PPCFunc* FindRuntimeExport(const char* name) {
+#if defined(_WIN32)
+    for (const char* module : {"rexruntimerd.dll", "rexruntime.dll", "rexruntimed.dll"}) {
+        if (HMODULE h = GetModuleHandleA(module)) {
+            if (auto* p = GetProcAddress(h, name)) {
+                return reinterpret_cast<PPCFunc*>(p);
+            }
+        }
+    }
+    return nullptr;
+#else
+    return reinterpret_cast<PPCFunc*>(dlsym(RTLD_NEXT, name));
+#endif
+}
+
+void ForwardLocked(PPCFunc* orig, PPCContext& ctx, uint8_t* base) {
+    std::lock_guard<std::mutex> lock(g_xinput_mutex);
+    if (orig) {
+        orig(ctx, base);
+    } else {
+        ctx.r3.u64 = 0x48F;  // ERROR_DEVICE_NOT_CONNECTED
+    }
+}
+
+}  // namespace
+
+extern "C" REX_FUNC(__imp__XamInputGetState) { ForwardLocked(g_orig_XamInputGetState, ctx, base); }
+extern "C" REX_FUNC(__imp__XamInputGetCapabilities) { ForwardLocked(g_orig_XamInputGetCapabilities, ctx, base); }
+extern "C" REX_FUNC(__imp__XamInputSetState) { ForwardLocked(g_orig_XamInputSetState, ctx, base); }
+extern "C" REX_FUNC(__imp__XamInputGetKeystrokeEx) { ForwardLocked(g_orig_XamInputGetKeystrokeEx, ctx, base); }
+
+void InstallSerializedXInput() {
+    g_orig_XamInputGetState = FindRuntimeExport("__imp__XamInputGetState");
+    g_orig_XamInputGetCapabilities = FindRuntimeExport("__imp__XamInputGetCapabilities");
+    g_orig_XamInputSetState = FindRuntimeExport("__imp__XamInputSetState");
+    g_orig_XamInputGetKeystrokeEx = FindRuntimeExport("__imp__XamInputGetKeystrokeEx");
+    REXLOG_INFO("XInput serialization: GetState={} GetCapabilities={} SetState={} GetKeystrokeEx={}",
+                g_orig_XamInputGetState != nullptr, g_orig_XamInputGetCapabilities != nullptr,
+                g_orig_XamInputSetState != nullptr, g_orig_XamInputGetKeystrokeEx != nullptr);
+    struct { const char* name; PPCFunc* func; } replacements[] = {
+        { "__imp__XamInputGetState", __imp__XamInputGetState },
+        { "__imp__XamInputGetCapabilities", __imp__XamInputGetCapabilities },
+        { "__imp__XamInputSetState", __imp__XamInputSetState },
+        { "__imp__XamInputGetKeystrokeEx", __imp__XamInputGetKeystrokeEx },
+    };
+    for (auto& r : replacements) {
+        bool found = false;
+        for (auto& [name, func] : rex::ppc::GetPPCFuncRegistry()) {
+            if (std::strcmp(name, r.name) == 0) { func = r.func; found = true; }
+        }
+        if (!found) rex::ppc::GetPPCFuncRegistry().emplace_back(r.name, r.func);
+    }
+}
+
+//=============================================================================
 // Scaleform GFx draw diagnostics (midasm hooks in default_hooks.toml).
 //
 // Counts what the game's GFx renderer (GRendererXbox360Impl) submits per UI

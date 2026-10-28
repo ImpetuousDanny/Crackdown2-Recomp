@@ -12,6 +12,7 @@
 #include "graphics_menu.h"
 
 void InstallQuietKernelStubs();
+void InstallSerializedXInput();
 void LoadRequestedGpuBackend(rex::RuntimeConfig& config);
 
 class Crackdown2App : public rex::ReXApp {
@@ -28,6 +29,7 @@ class Crackdown2App : public rex::ReXApp {
   // silent no-ops before the XEX import table is resolved (see hooks.cpp).
   void OnPreSetup(rex::RuntimeConfig& config) override {
     InstallQuietKernelStubs();
+    InstallSerializedXInput();
     LoadRequestedGpuBackend(config);
   }
 
