@@ -28,7 +28,9 @@ zips; the steps below turn your disc into the `assets` folder the recomp reads.
      `assets\`), then follow *To build* / *Windows build* below. Codegen runs as the first build step and needs
      `assets\default.xex` and `assets\default.xexp`; a clean Windows build takes about five minutes plus codegen.
 5. **DLC later**: `python tools\setup_game.py ... --dlc <package> [...]` or `tools\dlc_install.py` directly (see *DLC*).
-6. **Play**: Options > Display holds the graphics, input and (with `-Cheats`) cheat rows; F5 opens the overlay with
+6. **Play**: the first screen after the (unplayable) intro videos is black until you press START, which is Enter on
+   the keyboard; the launcher turns keyboard/mouse gamepad emulation on by default (`-NoKeyboard` to disable it).
+   Options > Display holds the graphics, input and (with `-Cheats`) cheat rows; F5 opens the overlay with
    a developer-console prompt; F4 rebinds keys. See *Controls* and *Performance* for the defaults the launcher applies.
 
 ## Requirements:
