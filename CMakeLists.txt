@@ -17,6 +17,7 @@ set(CRACKDOWN2_SOURCES
     src/hooks.cpp
     src/native_menu.cpp
     src/game_console.cpp
+    src/profiling.cpp
 )
 
 if(WIN32)

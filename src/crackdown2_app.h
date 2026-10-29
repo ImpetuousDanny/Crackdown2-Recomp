@@ -13,6 +13,7 @@
 
 #include "game_console.h"
 #include "graphics_menu.h"
+#include "profiling.h"
 
 void InstallQuietKernelStubs();
 void InstallSerializedXInput();
@@ -34,6 +35,7 @@ class Crackdown2App : public rex::ReXApp {
     InstallQuietKernelStubs();
     InstallSerializedXInput();
     LoadRequestedGpuBackend(config);
+    c2::StartProfilingIfRequested();
   }
 
   // Build our custom overlays and bind a key to toggle them. This runs after the
