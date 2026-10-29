@@ -162,6 +162,8 @@ std::vector<Row> display_rows() {
        {{"bilinear", "BILINEAR"}, {"cas", "CAS"}, {"fsr", "FSR"}, {"fsr2", "FSR 2"}, {"fsr3", "FSR 3"}}},
       {"GPU READBACK", "COPY GPU MEMEXPORT RESULTS BACK TO THE CPU. OFF IS 3-10X FASTER IN GAME", RowKind::kCvar,
        "readback_memexport", {kOnOff[0], kOnOff[1]}},
+      {"GPU PAGE REFRESH", "RE-UPLOAD ALL CPU-WRITTEN GPU MEMORY EVERY FRAME. OFF IS ~12% FASTER IN GAME",
+       RowKind::kCvar, "clear_memory_page_state", {kOnOff[0], kOnOff[1]}},
   };
 }
 

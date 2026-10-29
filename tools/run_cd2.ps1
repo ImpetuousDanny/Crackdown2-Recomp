@@ -1,8 +1,10 @@
 # Launch the Crackdown 2 recomp on Windows.
 #   .\tools\run_cd2.ps1 [-Config relwithdebinfo|debug|release] [-Assets <path>] [-Update <path>] [-Backend any|d3d12|vulkan]
-#                       [-Cheats] [-Readback] [-VSync] [extra args...]
+#                       [-Cheats] [-Readback] [-PageRefresh] [-VSync] [extra args...]
 # -Cheats   enables the hidden cheat rows at the end of Options > Display (--c2_cheats=true).
 # -Readback keeps the runtime's GPU memexport readback on (default off: 3-10x faster in game, see README "Performance").
+# -PageRefresh keeps the runtime's per-frame GPU page-state refresh on (default off: the game re-uploads ~20 MB of
+#           unchanged vertex data every frame with it on, see README "Performance").
 # -VSync    keeps v-sync on (default off so the frame rate is not capped at the display's refresh / 2).
 param(
     [string]$Config = "relwithdebinfo",
@@ -11,6 +13,7 @@ param(
     [string]$Backend = "any",
     [switch]$Cheats,
     [switch]$Readback,
+    [switch]$PageRefresh,
     [switch]$VSync,
     [Parameter(ValueFromRemainingArguments = $true)] [string[]]$Rest
 )
@@ -22,6 +25,7 @@ if (-not (Test-Path $exe)) { Write-Error "Executable not found: $exe (build the 
 $args = @("--game_data_root=$Assets", "--gpu_plugin=xenos", "--c2_gpu_backend=$Backend", "--c2_fps_display")
 if ($Update -ne "") { $args += "--update_data_root=$Update" }
 if (-not $Readback) { $args += "--readback_memexport=false" }
+if (-not $PageRefresh) { $args += "--clear_memory_page_state=false" }
 if (-not $VSync) { $args += "--vsync=false" }
 if ($Cheats) { $args += "--c2_cheats=true" }
 $args += $Rest

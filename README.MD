@@ -142,13 +142,31 @@ room, turning the camera through twelve headings at one spot (`results/perf0c_*`
 The runtime copies every memexport (GPU-to-memory) result back to the CPU by default, which stalls the whole GPU pipeline
 whenever the scene uses it. The game does not read those results on the CPU in anything observed so far, so the launcher
 (`tools/run_cd2.ps1`), the Options > Display **GPU READBACK** row and the F5 overlay all expose the switch; the launcher
-passes `--readback_memexport=false` unless you give it `-Readback`. The game's own loop runs at 250 Hz
-(`MainLoop` on the debug overlay), so the remaining cap is in GPU emulation, not the recompiled CPU code.
+passes `--readback_memexport=false` unless you give it `-Readback`.
 
-Things that did not help on this hardware: `--occlusion_query_enable=false` (no change), `--native_2x_msaa=false`
-(no change). `--draw_resolution_scale_x/y=2` currently removes the D3D12 device at boot (`HRESULT 0x887A0001`), so leave
-RENDER SCALE at 1X on D3D12 for now. The in-game `perfgraph` and `gputiming` console commands (cheat rows PERF GRAPH / GPU
-TIMING) draw the game's own frame-time graphs for further digging.
+Second switch, found by profiling (see below): the runtime's `clear_memory_page_state` cvar (default on) forgets every
+CPU-uploaded page of GPU shared memory at the end of each frame, so the whole scene's vertex and index data (~20 MB in the
+tutorial room, ~800 MB/s) is copied to the GPU again every frame. The CPU write-watch already catches real changes, and
+the game renders identically with it off. The launcher passes `--clear_memory_page_state=false` unless you give it
+`-PageRefresh`; the Options > Display **GPU PAGE REFRESH** row and the F5 overlay expose it too. Same spot, same stepped
+turn, stock SDK: 37.5 FPS with it on, 42.2 FPS with it off.
+
+Where the rest goes: with both switches off the frame is bound by the SDK's "GPU Commands" thread, which runs at 100%
+translating the game's ~6,000 draw calls per frame (Tracy capture `results/perf10prof`). The guest render thread spends
+two thirds of its time waiting on it (`D3D_CDevice_BlockOnFence`), and the game's own loop runs at 140-250 Hz, so neither
+the recompiled CPU code nor the GPU itself is the limit. Per-draw costs on that thread: shared-memory range requests
+(uploads) ~23%, register writes ~29% before the SDK patch below, primitive processing ~10%, submission ~12%, AMD driver
+~10%. Reducing that per-draw cost is SDK work; a patch that writes type-0 register ranges in bulk (as upstream Xenia does)
+cut register handling from 29% to 11% of the thread and is kept under `patches/rexglue-sdk/`.
+
+Things that did not help on this hardware (all within ±2 FPS run-to-run noise): `--occlusion_query_enable=false`,
+`--native_2x_msaa=false`, `--d3d12_bindless=false`, `--d3d12_tiled_shared_memory=false`,
+`--d3d12_submit_on_primary_buffer_end=false`, a Release-configuration build of the game and SDK, and the game's own
+crowd / depth-of-field / motion-blur / particle toggles. The game's `fastrender` console command gives ~46 FPS but skips
+part of the lighting pass (flatter, brighter image), and `forcelod 2` simply stops drawing the room, so neither is a
+usable setting. `--draw_resolution_scale_x/y=2` currently removes the D3D12 device at boot (`HRESULT 0x887A0001`), so
+leave RENDER SCALE at 1X on D3D12 for now. The in-game `perfgraph` and `gputiming` console commands (cheat rows PERF
+GRAPH / GPU TIMING) draw the game's own frame-time graphs for further digging.
 
 ### Profiling
 

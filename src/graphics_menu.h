@@ -56,6 +56,7 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
     BoolRow("Show FPS overlay", "c2_fps_display");
     BoolRow("Native 2x MSAA", "native_2x_msaa");
     BoolRow("GPU memexport readback (off = much faster)", "readback_memexport");
+    BoolRow("GPU page-state refresh every frame (off = faster)", "clear_memory_page_state");
 
     ImGui::Separator();
 
