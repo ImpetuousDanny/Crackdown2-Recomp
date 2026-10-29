@@ -14,7 +14,7 @@ This script does both for every package you pass it:
 
     python3 tools/dlc_install.py <package> [<package> ...] [--user-data-root DIR] [--license 0xFFFFFFFF]
 
-Default user data root: %LOCALAPPDATA%\\crackdown2 on Windows, ~/.local/share/crackdown2
+Default user data root: Documents\\crackdown2 on Windows, ~/.local/share/crackdown2
 elsewhere (the SDK's GetUserFolder()/<app name>). Pass --user-data-root if you
 launch with --user_data_root=... . The game checks licences per package through
 XamContentCreate (reads the .header) and globally through XamContentGetLicenseMask
@@ -38,8 +38,17 @@ XCONTENT_AGGREGATE_SIZE = 0x148
 
 
 def default_user_root():
+    """Mirror rex::filesystem::GetUserFolder() / "crackdown2": the Documents folder on Windows (via the shell,
+    so a redirected Documents folder is honoured), $XDG_DATA_HOME or ~/.local/share elsewhere."""
     if sys.platform.startswith("win"):
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        import ctypes
+        import ctypes.wintypes
+        buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
+        csidl_personal = 5  # FOLDERID_Documents
+        if ctypes.windll.shell32.SHGetFolderPathW(None, csidl_personal, None, 0, buf) == 0 and buf.value:
+            base = buf.value
+        else:
+            base = os.path.join(os.path.expanduser("~"), "Documents")
         return os.path.join(base, "crackdown2")
     base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
     return os.path.join(base, "crackdown2")

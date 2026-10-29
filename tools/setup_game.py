@@ -13,7 +13,8 @@ What it does:
   2. Extracts the STFS title-update container to <dest>/tu5 (tools/stfs_extract.py), or uses the folder you gave,
      and copies default.xexp next to assets/default.xex (codegen applies it from there).
   3. Checks the SHA-256 of default.xex and default.xexp against the known-good values from the README.
-  4. Installs each DLC package into the runtime's user data root (tools/dlc_install.py).
+  4. Checks each DLC package against the README hashes (tools/verify_dlc.py) and installs it into the runtime's
+     user data root (tools/dlc_install.py).
   5. Writes cd2_game.json in the project/release root with the assets and update paths, which run_cd2.ps1 reads
      when -Assets / -Update are not given.
 
@@ -71,6 +72,7 @@ def check_hash(path, name, skip):
 
 
 def main():
+    sys.stdout.reconfigure(line_buffering=True)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--iso", required=True, help="disc image (.iso) or an already extracted game folder")
     ap.add_argument("--tu", required=True, help="Title Update 5 container or an already extracted update folder")
@@ -130,7 +132,12 @@ def main():
     # 4. DLC.
     print("[4/5] DLC")
     if args.dlc:
-        run_tool("dlc_install.py", *[os.path.abspath(p) for p in args.dlc])
+        pkgs = [os.path.abspath(p) for p in args.dlc]
+        if not args.skip_hash:
+            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "verify_dlc.py"), *pkgs])
+            if r.returncode != 0:
+                print("  WARN a DLC package did not match a known-good hash (see above); installing it anyway")
+        run_tool("dlc_install.py", *pkgs)
     else:
         print("  none given (add --dlc <package> ... later at any time)")
 

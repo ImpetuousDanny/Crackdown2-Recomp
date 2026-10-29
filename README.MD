@@ -47,6 +47,19 @@ zips; the steps below turn your disc into the `assets` folder the recomp reads.
 - Crackdown 2 Title Update 5 xexp
  ```SHA256: A5E49FC1FF7F6F65E6F95A7B5C4B9392BB9E38674D1237AC0E2F0149D05929D7```
 
+DLC packages (optional, see *DLC*). These are the marketplace `LIVE` containers for title `4D5308BC`; the file name is the
+package's content ID, the hash is of the container as downloaded:
+
+| Pack | Package file name | Size | SHA-256 |
+|---|---|---|---|
+| Toy Box Pack | `856014F705032E789E4A6DBD2546F470B06ED71F4D` | 51,814,400 | `CF679BB4A061F9C7319EB1D5E4297888A1AB52B73436DC0B08C47F0528C774FD` |
+| Deluge Pack | `BD0C27EFE61BEE10F176F3A624F8A851224A89694D` | 174,309,376 | `A1064677C4A756C4C82DC79CDA60622F15A19E14393AE661E1CE4B9CCC6AD480` |
+| Pre-Order Armor | `ACE4E65BC7BA561F3A27C1A5390B5904CB6C73EB4D` | 57,344 | `1EE257B70EC9B61BF8B7FAC47579D9982A7BCDD1D47080260ECBD1F4CD09E372` |
+
+The "Crackdown 2 (Addon)" set that circulates alongside them (27 small `LIVE` files under `4D5308BC/00009000/`) is
+avatar clothing (content type `00009000`: t-shirts, caps, the Agency SUV avatar prop and so on). It is not game content,
+the game never enumerates it, and `dlc_install.py` is not meant for it.
+
 ## To build:
  - Compile and install the rexglue SDK
  - Extract game disc and latest title update into the assets folder. (Including its xexp file)
@@ -158,11 +171,18 @@ through `Console_Execute`, `sub_825CE628`, on the game thread). Three ways in:
 ## DLC
 
 The runtime does not read LIVE/PIRS packages directly; marketplace content must be extracted into the user data root
-(`%LOCALAPPDATA%\crackdown2` on Windows, `~/.local/share/crackdown2` elsewhere) as
+(`Documents\crackdown2` on Windows, where the save games also live, `$XDG_DATA_HOME/crackdown2` or
+`~/.local/share/crackdown2` elsewhere; `--user_data_root=<dir>` overrides it) as
 `0000000000000000/4D5308BC/00000002/<package name>/` with a `Headers/00000002/<package name>.header` licence file.
-`tools/dlc_install.py <package> [...]` does this for Toy Box / Deluge packages (and writes a full licence mask). If a pack
-is still reported as unlicensed, launch with `--license_mask=0xFFFFFFFF` or use the DLC LICENSE cheat row
-(`togglelicenseoverride`). Deluge and Keys to the City need the Toy Box content.
+`tools/dlc_install.py <package> [...]` does this for the Toy Box, Deluge and Pre-Order Armor packages listed under
+*Hashes* (and writes a full licence mask). `setup_game.py --dlc` calls it for you. Installing re-extracts the package, so
+expect 50 MB for Toy Box and 166 MB for Deluge under the user data root. If a pack is still reported as unlicensed,
+launch with `--license_mask=0xFFFFFFFF` or use the DLC LICENSE cheat row (`togglelicenseoverride`). Deluge and Keys to
+the City need the Toy Box content. Both pack files are verified against the hashes above by `tools/verify_dlc.py`:
+
+```
+python tools\verify_dlc.py <package> [...]
+```
 
 ## Performance
 
