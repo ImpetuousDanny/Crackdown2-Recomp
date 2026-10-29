@@ -160,9 +160,24 @@ void RequestRestart() {
   }
 
   // Relaunch only after this process has fully exited, so the exclusively-locked
-  // shader/pipeline cache is released first. A tiny detached cmd stub polls for
-  // our PID to disappear, then re-runs us with the exact same command line.
+  // shader/pipeline cache is released first. A tiny cmd stub polls for our PID to
+  // disappear, then re-runs us with the exact same command line.
+  //
+  // If we were started inside a kill-on-job-close job object (e.g. from a
+  // scheduled task), a detached child is killed when the job is torn down as we
+  // exit, so the relaunch never happens - and such jobs usually forbid
+  // CREATE_BREAKAWAY_FROM_JOB too. In that case, hand the relaunch to the Task
+  // Scheduler service instead: it runs the stub outside our job. Otherwise (the
+  // common double-click / launcher-script case) spawn the stub directly, which is
+  // self-contained and leaves no task behind.
   const DWORD pid = GetCurrentProcessId();
+  const std::wstring game_cmd = GetCommandLineW();
+  constexpr wchar_t kTaskName[] = L"cd2_apply_restart";
+
+  BOOL in_job = FALSE;
+  IsProcessInJob(GetCurrentProcess(), nullptr, &in_job);
+  bool via_task = in_job != FALSE;
+
   wchar_t tmp[MAX_PATH];
   if (GetTempPathW(MAX_PATH, tmp) == 0) {
     REXLOG_ERROR("restart: GetTempPath failed; quitting instead.");
@@ -170,30 +185,87 @@ void RequestRestart() {
     return;
   }
   std::filesystem::path stub = std::filesystem::path(tmp) / "crackdown2_restart.cmd";
+  std::filesystem::path vbs = std::filesystem::path(tmp) / "crackdown2_restart.vbs";
   {
     std::wofstream f(stub);
     f << L"@echo off\r\n";
     f << L":w\r\n";
     f << L"tasklist /fi \"PID eq " << pid << L"\" 2>nul | find \"" << pid
       << L"\" >nul && (ping -n 2 127.0.0.1 >nul & goto w)\r\n";
-    f << L"start \"\" " << GetCommandLineW() << L"\r\n";
+    if (via_task) {
+      // Run the game synchronously (no `start`) so the hosting task stays alive
+      // (and its job open) for as long as the game runs, then clean up on exit.
+      f << game_cmd << L"\r\n";
+      f << L"schtasks /delete /tn " << kTaskName << L" /f >nul 2>&1\r\n";
+      f << L"del \"" << vbs.wstring() << L"\"\r\n";
+    } else {
+      f << L"start \"\" " << game_cmd << L"\r\n";
+    }
     f << L"del \"%~f0\"\r\n";
   }
+  if (via_task) {
+    // The task runs this .vbs via wscript (a windowless host), which runs the cmd
+    // stub with a hidden window and waits for it - so no console flashes on screen
+    // while the game is restarting or running. ("" doubles to one quote in VBScript.)
+    std::wofstream v(vbs);
+    v << L"CreateObject(\"WScript.Shell\").Run \"cmd /c \"\"" << stub.wstring()
+      << L"\"\"\", 0, True\r\n";
+  }
 
-  std::wstring cmdline = L"cmd.exe /c \"" + stub.wstring() + L"\"";
-  std::vector<wchar_t> buf(cmdline.begin(), cmdline.end());
-  buf.push_back(L'\0');
-  STARTUPINFOW si{};
-  si.cb = sizeof(si);
-  PROCESS_INFORMATION pi{};
-  if (CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE,
-                     CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr,
-                     exe_path.parent_path().wstring().c_str(), &si, &pi)) {
+  auto run_sync = [](const std::wstring& command) -> bool {
+    std::vector<wchar_t> buf(command.begin(), command.end());
+    buf.push_back(L'\0');
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                        nullptr, nullptr, &si, &pi)) {
+      return false;
+    }
+    WaitForSingleObject(pi.hProcess, 10000);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    REXLOG_INFO("restart: relaunch stub started; quitting to apply settings.");
+    return code == 0;
+  };
+
+  auto spawn_direct = [&]() -> bool {
+    std::wstring cmdline = L"cmd.exe /c \"" + stub.wstring() + L"\"";
+    const DWORD base_flags = CREATE_NO_WINDOW | DETACHED_PROCESS;
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    auto try_flags = [&](DWORD flags) -> bool {
+      std::vector<wchar_t> buf(cmdline.begin(), cmdline.end());
+      buf.push_back(L'\0');
+      if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, flags, nullptr,
+                          exe_path.parent_path().wstring().c_str(), &si, &pi)) {
+        return false;
+      }
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      return true;
+    };
+    return try_flags(base_flags | CREATE_BREAKAWAY_FROM_JOB) || try_flags(base_flags);
+  };
+
+  auto spawn_via_task = [&]() -> bool {
+    // A one-shot task whose action runs the stub; /run triggers it now and the
+    // Task Scheduler service hosts it outside our job. /st is a dummy time.
+    std::wstring create = std::wstring(L"schtasks /create /f /tn ") + kTaskName +
+                          L" /sc once /st 23:59 /tr \"wscript \\\"" + vbs.wstring() + L"\\\"\"";
+    std::wstring run = std::wstring(L"schtasks /run /tn ") + kTaskName;
+    return run_sync(create) && run_sync(run);
+  };
+
+  bool launched = via_task ? (spawn_via_task() || spawn_direct())
+                           : (spawn_direct() || spawn_via_task());
+  if (launched) {
+    REXLOG_INFO("restart: relaunch scheduled ({}); quitting to apply settings.",
+                via_task ? "task" : "direct");
   } else {
-    REXLOG_ERROR("restart: CreateProcess failed ({}); quitting without relaunch.",
+    REXLOG_ERROR("restart: could not start relaunch ({}); quitting without relaunch.",
                  static_cast<unsigned long>(GetLastError()));
   }
 #else
