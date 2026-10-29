@@ -28,3 +28,9 @@ endif()
 
 rexglue_setup_target(crackdown2 GPU_PLUGINS xenos)
 
+
+# Windows application/taskbar icon (resources/crackdown2.rc -> crackdown2.ico).
+if(WIN32)
+    enable_language(RC)
+    target_sources(crackdown2 PRIVATE resources/crackdown2.rc)
+endif()
