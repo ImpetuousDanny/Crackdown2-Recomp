@@ -6,6 +6,7 @@
 #include <rex/system/kernel_state.h>
 #include <rex/system/xmemory.h>
 
+#include <algorithm>
 #include <deque>
 #include <mutex>
 #include <sstream>
@@ -25,8 +26,9 @@ namespace {
 // Core globals live at 0x83800000; +2804 holds the console object pointer
 // (Core_Init executes its "minp press ..." input-map commands through it).
 constexpr uint32_t kConsoleObjectPtr = 0x83800000 + 2804;
-// Ticks to wait before running --c2_console_startup (the front end is up by then).
-constexpr uint32_t kStartupDelayTicks = 240;
+REXCVAR_DEFINE_INT32(c2_console_startup_delay, 4, "Game",
+                     "Seconds after boot before --c2_console_startup runs (the front end is up after ~4; "
+                     "a loaded save needs 60+). F8 runs the same commands again at any time.");
 
 std::mutex g_mutex;
 std::deque<std::string> g_queue;
@@ -82,6 +84,15 @@ bool ExecConsoleCommand(PPCContext& ctx, uint8_t* base, const std::string& comma
   return true;
 }
 
+void RunStartupCommands() {
+  std::string startup = REXCVAR_GET(c2_console_startup);
+  std::stringstream ss(startup);
+  std::string cmd;
+  while (std::getline(ss, cmd, ';')) {
+    if (!cmd.empty()) QueueConsoleCommand(cmd);
+  }
+}
+
 void QueueConsoleCommand(const std::string& command) {
   if (command.empty()) return;
   std::lock_guard<std::mutex> lock(g_mutex);
@@ -97,14 +108,9 @@ extern "C" void RWS_MainLoop_Poll(PPCContext& ctx, uint8_t* base) {
   __imp__RWS_MainLoop_Poll(ctx, base);
 
   if (g_ticks == 0) REXLOG_INFO("console: main loop poll running (console {})", c2::ConsoleReady() ? "ready" : "not ready");
-  if (!g_startup_done && ++g_ticks >= kStartupDelayTicks) {
+  if (!g_startup_done && ++g_ticks >= uint32_t(std::max(1, REXCVAR_GET(c2_console_startup_delay))) * 60u) {
     g_startup_done = true;
-    std::string startup = REXCVAR_GET(c2_console_startup);
-    std::stringstream ss(startup);
-    std::string cmd;
-    while (std::getline(ss, cmd, ';')) {
-      if (!cmd.empty()) c2::QueueConsoleCommand(cmd);
-    }
+    c2::RunStartupCommands();
   }
 
   std::deque<std::string> pending;

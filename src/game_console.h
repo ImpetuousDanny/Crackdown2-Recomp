@@ -26,6 +26,9 @@ bool ExecConsoleCommand(PPCContext& ctx, uint8_t* base, const std::string& comma
 // thread (ImGui overlays, key binds, ...).
 void QueueConsoleCommand(const std::string& command);
 
+// Queue every ';'-separated command of --c2_console_startup (bound to F8).
+void RunStartupCommands();
+
 // True once the game has created its console (after Core_Init).
 bool ConsoleReady();
 

@@ -17,13 +17,14 @@
 //     We intercept that call site with a midasm hook and handle our own rows
 //     there (the stock handlers ignore row indices they do not know).
 //
-// Screens we extend (all created at boot by the component factory):
-//   Options > Display  (id 28, vtable 0x82164968, Init sub_828B5128): graphics
-//   Options > Controls (id 29, vtable 0x82164910, Init sub_828B48D0): mouse,
-//                      keyboard and gamepad driver settings
-//   Options > HUD      (id 30, vtable 0x82164A18, Init sub_828B5358): hidden
-//                      cheat / debug rows, only when --c2_cheats=true. They
-//                      drive the game's own developer console (game_console.h).
+// Everything goes on Options > Display (id 28, vtable 0x82164968, Init
+// sub_828B5128), the one option screen with a proper scrolling list: first the
+// graphics rows, then the mouse / keyboard / gamepad rows, then (only with
+// --c2_cheats=true) the hidden cheat / debug rows, which drive the game's own
+// developer console (game_console.h). The Controls screen (id 29) draws a fixed
+// two-row box over the pad diagram and stops reacting to Back once extra rows
+// are added, and the HUD screen (id 30) is not reachable from the front-end
+// options list, so neither hosts rows.
 //
 // The rows render with the game's font, cursor, sounds and legend, scroll with
 // the stock rows, and change real engine cvars or run console commands.
@@ -45,14 +46,12 @@
 
 REXCVAR_DEFINE_BOOL(c2_cheats, false, "Game",
                     "Adds a hidden cheat/debug menu (god mode, weapons, skills, time of day, spawning, "
-                    "teleport, perf graphs) at the bottom of Options > HUD.");
+                    "teleport, perf graphs) at the bottom of Options > Display.");
 
 // Recompiled guest routines. `__imp__name` is always the original body; the
 // plain symbol is a weak alias that a definition here replaces.
 extern "C" {
 void __imp__sub_828B5128(PPCContext& ctx, uint8_t* base);  // FeDisplayOptions::Init
-void __imp__sub_828B48D0(PPCContext& ctx, uint8_t* base);  // FeControlOptions::Init
-void __imp__sub_828B5358(PPCContext& ctx, uint8_t* base);  // FeHudOptions::Init
 void sub_828F3260(PPCContext& ctx, uint8_t* base);         // Menu_AddItem(menu) -> item
 void sub_828F3400(PPCContext& ctx, uint8_t* base);         // Item_SetText(item, slot0, slot1)
 }
@@ -60,8 +59,6 @@ void sub_828F3400(PPCContext& ctx, uint8_t* base);         // Item_SetText(item,
 namespace {
 
 constexpr uint32_t kDisplayOptionsVtable = 0x82164968;
-constexpr uint32_t kControlOptionsVtable = 0x82164910;
-constexpr uint32_t kHudOptionsVtable = 0x82164A18;
 
 // Menu object
 constexpr uint32_t kMenuItemsBegin = 44;
@@ -184,6 +181,8 @@ std::vector<Row> control_rows() {
 
 std::vector<Row> cheat_rows() {
   return {
+      {"- CHEAT MENU -", "DEVELOPER CONSOLE SHORTCUTS (--c2_cheats). MOST ONLY WORK IN GAME", RowKind::kCommandOnce,
+       nullptr, {kNone[0]}, nullptr, ""},
       {"GOD MODE", "PLAYER CANNOT BE DAMAGED", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr, "god", true},
       {"INFINITE AMMO", "NEVER RUN OUT OF AMMUNITION", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
        "infiniteammo", true},
@@ -265,8 +264,8 @@ struct Screen {
 };
 
 Screen g_display{kDisplayOptionsVtable, display_rows()};
-Screen g_controls{kControlOptionsVtable, control_rows()};
-Screen g_hud{kHudOptionsVtable, cheat_rows()};
+Screen g_controls{kDisplayOptionsVtable, control_rows()};
+Screen g_hud{kDisplayOptionsVtable, cheat_rows()};
 Screen* const g_screens[] = {&g_display, &g_controls, &g_hud};
 
 // Append `scr.rows` to the first menu of `screen` (call after the stock Init).
@@ -371,17 +370,7 @@ extern "C" void sub_828B5128(PPCContext& ctx, uint8_t* base) {  // FeDisplayOpti
   const uint32_t screen = ctx.r3.u32;
   __imp__sub_828B5128(ctx, base);
   append_rows(ctx, base, screen, g_display);
-}
-
-extern "C" void sub_828B48D0(PPCContext& ctx, uint8_t* base) {  // FeControlOptions::Init
-  const uint32_t screen = ctx.r3.u32;
-  __imp__sub_828B48D0(ctx, base);
   append_rows(ctx, base, screen, g_controls);
-}
-
-extern "C" void sub_828B5358(PPCContext& ctx, uint8_t* base) {  // FeHudOptions::Init
-  const uint32_t screen = ctx.r3.u32;
-  __imp__sub_828B5358(ctx, base);
   if (REXCVAR_GET(c2_cheats)) append_rows(ctx, base, screen, g_hud);
 }
 
@@ -400,11 +389,11 @@ void C2MenuItemActivated(PPCRegister& r3, PPCRegister& r5, PPCRegister& r6, PPCR
 
     const int32_t selected = int32_t(r6.u32);
     const int32_t index = selected - int32_t(scr->first_row);
-    if (index < 0 || size_t(index) >= scr->items.size()) return;
+    if (index < 0 || size_t(index) >= scr->items.size()) continue;  // another block on this menu
 
     const uint32_t menu = r26.u32;
     const uint32_t item = ld<uint32_t>(base, ld<uint32_t>(base, menu + kMenuItemsBegin) + uint32_t(selected) * 4);
-    if (item != scr->items[size_t(index)].item) return;
+    if (item != scr->items[size_t(index)].item) continue;
 
     Row& row = scr->rows[scr->items[size_t(index)].row];
     activate(row);

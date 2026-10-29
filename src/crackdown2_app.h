@@ -11,6 +11,7 @@
 #include <rex/rex_app.h>
 #include <rex/ui/keybinds.h>
 
+#include "game_console.h"
 #include "graphics_menu.h"
 
 void InstallQuietKernelStubs();
@@ -52,11 +53,16 @@ class Crackdown2App : public rex::ReXApp {
     }
     rex::ui::RegisterBind("bind_mouse_look", "F6", "Toggle mouse look (right stick on the mouse)",
                           [] { rex::input::mnk::SetMouseLookActive(!rex::input::mnk::IsMouseLookActive()); });
+    // Re-run the --c2_console_startup developer-console commands (e.g. a
+    // TeleportPlayer that only makes sense once a save is loaded).
+    rex::ui::RegisterBind("bind_console_startup", "F8", "Run the --c2_console_startup console commands",
+                          [] { c2::RunStartupCommands(); });
   }
 
   void OnShutdown() override {
     rex::ui::UnregisterBind("bind_graphics_menu");
     rex::ui::UnregisterBind("bind_mouse_look");
+    rex::ui::UnregisterBind("bind_console_startup");
   }
 
   // Override virtual hooks for customization:

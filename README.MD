@@ -81,11 +81,13 @@ invalidation on GFx texture updates; had no effect, so the missing text is not a
   (default 1.0 is slow; try 5-10 for a desk mouse).
 * **Native rows in the game's own option screens** (`src/native_menu.cpp`), drawn by the game's Scaleform menu with its
   font, cursor, tooltips and sounds. Press A on a row to cycle its value; the rows write real engine cvars:
-  * *Options > Display*: V-SYNC, FULLSCREEN, FPS COUNTER, RESOLUTION, RENDER SCALE (1x-4x internal resolution), 2X
-    MSAA, ANTI-ALIASING (FXAA), ANISOTROPIC FILTER, UPSCALING FILTER. Rows marked "after restart" need a relaunch.
-  * *Options > Controls*: KEYBOARD AND MOUSE, MOUSE LOOK, MOUSE SENSITIVITY, GAMEPAD DRIVER (SDL or XInput) and a
-    reminder that key rebinding lives in the F4 overlay.
-  * *Options > HUD* with `--c2_cheats=true`: the hidden cheat/debug menu (next section).
+  * Graphics: V-SYNC, FULLSCREEN, FPS COUNTER, RESOLUTION, RENDER SCALE (1x-4x internal resolution), 2X MSAA,
+    ANTI-ALIASING (FXAA), ANISOTROPIC FILTER, UPSCALING FILTER. Rows marked "after restart" need a relaunch.
+  * Input: KEYBOARD AND MOUSE, MOUSE LOOK, MOUSE SENSITIVITY, GAMEPAD DRIVER (SDL or XInput) and a reminder that key
+    rebinding lives in the F4 overlay.
+  * With `--c2_cheats=true`, a CHEAT MENU block follows (next section).
+  All of them live on *Options > Display*, the only option screen with a scrolling list (the Controls screen is a
+  fixed two-row box over the pad diagram).
   The row framework is documented in `docs/native_menu.md` (component ids, vtable slots, item/text object layout, the
   bctrl call sites used by the midasm hook). No game assets are modified.
 
@@ -107,15 +109,16 @@ The retail executable still contains Ruffian's developer console with ~730 comma
 recomp bridges to it from host code (`src/game_console.cpp`: the console object sits at Core+2804 and commands run
 through `Console_Execute`, `sub_825CE628`, on the game thread). Three ways in:
 
-* `--c2_cheats=true` appends a hidden cheat menu to **Options > HUD**: GOD MODE, INFINITE AMMO, ALL WEAPONS, MAX SKILLS,
+* `--c2_cheats=true` appends a hidden cheat menu to the end of **Options > Display**: GOD MODE, INFINITE AMMO, ALL WEAPONS, MAX SKILLS,
   FULL HEALTH, SUPPLY POINTS, ORBS, TIME OF DAY, RAIN, DIFFICULTY, SPAWN ENEMY, APOCALYPSE, WARP rows, FLY CAM, GAME FPS
   CAP, PERF GRAPH, GPU TIMING and DLC LICENSE. Each row runs the matching console command (`god`, `loaded`,
   `maxagentskills`, `TeleportPlayer x y z`, `summon <prototype>`, `todsetphase`, `setfps`, `perfgraph`, ...). The row
   list is `cheat_rows()` in `src/native_menu.cpp`; add your own warp points as `TeleportPlayer x y z` (the game's Pos
   readout on the F5/FPS overlay gives coordinates).
 * The **F5** overlay has a free-text console box: type any command, Enter runs it.
-* `--c2_console_startup="cmd1;cmd2"` runs commands a few seconds after boot (handy for `perfgraph;gputiming`).
-  `--c2_gdb_console_output_log=true` logs what the console prints.
+* `--c2_console_startup="cmd1;cmd2"` runs commands `--c2_console_startup_delay` seconds after boot (default 4, so
+  `perfgraph;gputiming` come up with the front end). **F8** runs the same list again, which is how to fire commands
+  that need a loaded game, such as `TeleportPlayer`. `--c2_gdb_console_output_log=true` logs what the console prints.
 
 ## DLC
 
