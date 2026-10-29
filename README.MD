@@ -112,8 +112,8 @@ through `Console_Execute`, `sub_825CE628`, on the game thread). Three ways in:
 * `--c2_cheats=true` appends a hidden cheat menu to the end of **Options > Display**: GOD MODE, INFINITE AMMO, ALL WEAPONS, MAX SKILLS,
   FULL HEALTH, SUPPLY POINTS, ORBS, TIME OF DAY, RAIN, DIFFICULTY, SPAWN ENEMY, APOCALYPSE, WARP rows, FLY CAM, GAME FPS
   CAP, PERF GRAPH, GPU TIMING and DLC LICENSE. Each row runs the matching console command (`god`, `loaded`,
-  `maxagentskills`, `TeleportPlayer x y z`, `summon <prototype>`, `todsetphase`, `setfps`, `perfgraph`, ...). The row
-  list is `cheat_rows()` in `src/native_menu.cpp`; add your own warp points as `TeleportPlayer x y z` (the game's Pos
+  `maxagentskills`, `TeleportPlayer x,y,z`, `summon <prototype>`, `todsetphase`, `setfps`, `perfgraph`, ...). The row
+  list is `cheat_rows()` in `src/native_menu.cpp`; add your own warp points as `TeleportPlayer x,y,z` (the game's Pos
   readout on the F5/FPS overlay gives coordinates).
 * The **F5** overlay has a free-text console box: type any command, Enter runs it.
 * `--c2_console_startup="cmd1;cmd2"` runs commands `--c2_console_startup_delay` seconds after boot (default 4, so

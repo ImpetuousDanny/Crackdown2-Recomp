@@ -75,7 +75,7 @@ REX_HOOK_RAW(GDb_ConsoleOutput) {
         std::string narrow(wstr.begin(), wstr.end());
         while (!narrow.empty() && std::isspace((unsigned char)narrow.back()))
             narrow.pop_back();
-        REXLOG_DEBUG("GDb_ConsoleOutput: {}", narrow);
+        REXLOG_INFO("GDb_ConsoleOutput: {}", narrow);
     }
 }
 

@@ -1,7 +1,7 @@
 # Crackdown 2 developer console commands
 
 The retail executable keeps Ruffian's developer console. The recomp exposes it
-through the hidden cheat rows in Options > HUD (`--c2_cheats=true`), the text box
+through the hidden cheat rows at the end of Options > Display (`--c2_cheats=true`), the text box
 in the F5 overlay, and the `--c2_console_startup="cmd1;cmd2"` flag. Commands are
 executed by `Console_Execute` (`sub_825CE628`, console object at Core+2804 =
 `0x83800AF4`). Output goes through `GDb_ConsoleOutput`; log it with
@@ -513,7 +513,7 @@ with `tools/console_commands.py`. Names are case-insensitive in the game.
 | player | `summon` | <prototype name> Summon prototype |
 | player | `summondamaged` | <prototype name> Summon prototype |
 | player | `takedamage` | Player character takes given amount of damage |
-| player | `TeleportPlayer` | transports player to new position |
+| player | `TeleportPlayer` | transports player to new position (`TeleportPlayer x,y,z`, comma separated; prints `Pos was`/`Pos now`) |
 | player | `togglespawn` | Toggles spawn points active and incative |
 | player | `ToggleTargeting` | Toggle on Screen targeting |
 | player | `transformplayer` | tests transform vfx |

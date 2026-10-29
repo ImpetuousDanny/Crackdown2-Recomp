@@ -82,7 +82,7 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
     }
 
     ImGui::Separator();
-    ImGui::TextDisabled("Game developer console (docs/console_commands.md), e.g. god, loaded, TeleportPlayer x y z");
+    ImGui::TextDisabled("Game developer console (docs/console_commands.md), e.g. god, loaded, TeleportPlayer x,y,z");
     ImGui::SetNextItemWidth(360.0f);
     if (ImGui::InputText("##c2console", console_buf_, sizeof(console_buf_),
                          ImGuiInputTextFlags_EnterReturnsTrue)) {
