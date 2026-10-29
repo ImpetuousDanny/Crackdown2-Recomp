@@ -17,7 +17,7 @@ REXCVAR_DEFINE_STRING(c2_console_startup, "", "Game",
                       "(for example \"perfgraph;gputiming\"). See docs/console_commands.md.");
 
 extern "C" {
-void sub_825CE628(PPCContext& ctx, uint8_t* base);        // Console_Execute(console, wchar_t* line, flags)
+void sub_825CE628(PPCContext& ctx, uint8_t* base);        // Console_Execute(console, wchar_t* line, context)
 void __imp__RWS_MainLoop_Poll(PPCContext& ctx, uint8_t* base);
 }
 
@@ -26,6 +26,11 @@ namespace {
 // Core globals live at 0x83800000; +2804 holds the console object pointer
 // (Core_Init executes its "minp press ..." input-map commands through it).
 constexpr uint32_t kConsoleObjectPtr = 0x83800000 + 2804;
+// Local player object (Core globals + 3976). The game's own console callers
+// pass `player + 1352` as the command context; player commands (TeleportPlayer,
+// god, loaded, ...) check it and silently do nothing when it is 0.
+constexpr uint32_t kLocalPlayerPtr = 0x83800000 + 3976;
+constexpr uint32_t kPlayerContextOffset = 1352;
 REXCVAR_DEFINE_INT32(c2_console_startup_delay, 4, "Game",
                      "Seconds after boot before --c2_console_startup runs (the front end is up after ~4; "
                      "a loaded save needs 60+). F8 runs the same commands again at any time.");
@@ -76,7 +81,8 @@ bool ExecConsoleCommand(PPCContext& ctx, uint8_t* base, const std::string& comma
   const uint32_t guest_line = rex::ppc::stack_push(ctx, base, line.data(), uint32_t(line.size()));
   ctx.r3.u32 = console;
   ctx.r4.u32 = guest_line;
-  ctx.r5.u32 = 0;
+  const uint32_t player = ld<uint32_t>(base, kLocalPlayerPtr);
+  ctx.r5.u32 = player ? player + kPlayerContextOffset : 0;
   sub_825CE628(ctx, base);
   rex::ppc::stack_pop(ctx, uint32_t(line.size()));
   ctx = saved;

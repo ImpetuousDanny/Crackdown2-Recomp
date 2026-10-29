@@ -4,7 +4,8 @@
 // ~730 commands ("god", "infiniteammo", "TeleportPlayer x y z", "summon <proto>",
 // "todsetphase", "setfps", "perfgraph", ...). docs/console_commands.md lists
 // them. The console object lives at Core+2804 and commands are executed by
-// Console_Execute(console, const wchar_t* line, flags) = sub_825CE628.
+// Console_Execute(console, const wchar_t* line, context) = sub_825CE628, where
+// context is the local player (+1352) or 0 before a game is loaded.
 //
 // Commands must run on a guest thread with a live PPCContext, so host code
 // queues them and the override of RWS_MainLoop_Poll (the game's per-frame poll)
