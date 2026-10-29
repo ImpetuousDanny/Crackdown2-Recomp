@@ -21,7 +21,9 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 if ($Assets -eq "") { $Assets = Join-Path $root "assets" }
 $build = Join-Path $root "out\build\win-amd64-$Config"
 $exe = Join-Path $build "crackdown2.exe"
-if (-not (Test-Path $exe)) { Write-Error "Executable not found: $exe (build the win-amd64-$Config preset first)"; exit 1 }
+# Release zips ship crackdown2.exe next to this script's parent folder instead of under out\build.
+if (-not (Test-Path $exe) -and (Test-Path (Join-Path $root "crackdown2.exe"))) { $exe = Join-Path $root "crackdown2.exe" }
+if (-not (Test-Path $exe)) { Write-Error "Executable not found: $exe (build the win-amd64-$Config preset first, or run from an extracted release)"; exit 1 }
 $args = @("--game_data_root=$Assets", "--gpu_plugin=xenos", "--c2_gpu_backend=$Backend", "--c2_fps_display")
 if ($Update -ne "") { $args += "--update_data_root=$Update" }
 if (-not $Readback) { $args += "--readback_memexport=false" }

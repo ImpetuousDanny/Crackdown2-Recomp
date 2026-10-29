@@ -1,3 +1,32 @@
+## Quick start: from your own disc to a running game
+
+You need your own copy of the game. Nothing from the disc or the title update is in this repository or in the release
+zips; the steps below turn your disc into the `assets` folder the recomp reads.
+
+1. **Dump the disc** to an ISO with whatever you use for Xbox 360 discs (a PC DVD drive with 360-capable firmware, or a
+   dump made on the console). Check it is the right build: after extraction `assets\default.xex` must have the SHA-256
+   listed under *Hashes* below.
+2. **Get Title Update 5** (the `xexp` container from Xbox Live; its SHA-256 is also listed below). TU5 is required: the
+   recompiled code is generated from the patched executable, and the runtime mounts the extracted update as `update:`.
+3. **Extract both** with the pure-Python tools in `tools/` (Python 3.8+, no extra packages):
+   ```
+   python tools\xdvdfs_extract.py <game.iso> assets
+   python tools\stfs_extract.py <TU5 file> tu5
+   ```
+   `assets\` now holds `default.xex` plus the game data; `tu5\` holds the update, including its `xexp`. Copy the `xexp`
+   into `assets\` as well (codegen reads it from there) and keep `tu5\` for the `-Update` switch at run time.
+4. **Either use a release build or compile:**
+   * *Release zip* (Windows x64, from this fork's GitHub Releases page): extract it anywhere, then
+     ```
+     .\tools\run_cd2.ps1 -Assets <path\to\assets> -Update <path\to\tu5>
+     ```
+     The zip holds `crackdown2.exe`, the two rexglue SDK DLLs, `tools\`, `docs\` and this README. No game data.
+   * *Compile it yourself*: follow *To build* / *Windows build* below. Codegen runs as the first build step and needs
+     `assets\default.xex` and the `xexp` in place; a clean Windows build takes about five minutes plus codegen.
+5. **Optional DLC**: `python tools\dlc_install.py <package> [...]` installs your own Toy Box / Deluge packages (see *DLC*).
+6. **Play**: Options > Display holds the graphics, input and (with `-Cheats`) cheat rows; F5 opens the overlay with
+   a developer-console prompt; F4 rebinds keys. See *Controls* and *Performance* for the defaults the launcher applies.
+
 ## Requirements:
 - [Rexglue SDK 0.10.0](https://github.com/rexglue/rexglue-sdk)
 - CMake
