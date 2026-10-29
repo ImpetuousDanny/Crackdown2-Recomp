@@ -208,6 +208,8 @@ void InstallQuietKernelStubs() {
 //=============================================================================
 
 #include <mutex>
+#include <string>
+#include <unordered_map>
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -259,7 +261,79 @@ extern "C" REX_FUNC(__imp__XamInputGetCapabilities) { ForwardLocked(g_orig_XamIn
 extern "C" REX_FUNC(__imp__XamInputSetState) { ForwardLocked(g_orig_XamInputSetState, ctx, base); }
 extern "C" REX_FUNC(__imp__XamInputGetKeystrokeEx) { ForwardLocked(g_orig_XamInputGetKeystrokeEx, ctx, base); }
 
+//-----------------------------------------------------------------------------
+// XamContentCreate / XamContentCreateEx root-name fix.
+//
+// The game mounts each DLC package as "dlc<n>" (sprintf into a stack buffer)
+// with an overlapped XamContentCreateEx. rexglue 0.10.0 defers the mount to
+// the overlapped worker but keeps only a view of the guest root-name string,
+// so by the time the mount runs the buffer holds something else and the
+// symbolic link is registered under garbage ("    :"). Every later
+// "dlc0:\dlc1.txt" open then fails and the game reports the content as needing
+// a newer title update. Copy the name into system-heap guest memory that
+// outlives the call (one allocation per distinct name) before forwarding.
+//-----------------------------------------------------------------------------
+namespace {
+
+std::mutex g_content_name_mutex;
+std::unordered_map<std::string, uint32_t> g_content_name_guest;
+PPCFunc* g_orig_XamContentCreate = nullptr;
+PPCFunc* g_orig_XamContentCreateEx = nullptr;
+
+uint32_t PersistentGuestString(uint8_t* base, uint32_t guest_addr) {
+    if (!guest_addr) return guest_addr;
+    const char* src = reinterpret_cast<const char*>(base + guest_addr);
+    std::string name(src, strnlen(src, 255));
+    std::lock_guard<std::mutex> lock(g_content_name_mutex);
+    auto it = g_content_name_guest.find(name);
+    if (it != g_content_name_guest.end()) return it->second;
+    auto* memory = rex::system::kernel_state()->memory();
+    uint32_t addr = memory->SystemHeapAlloc(static_cast<uint32_t>(name.size() + 1));
+    if (!addr) return guest_addr;
+    std::memcpy(base + addr, name.c_str(), name.size() + 1);
+    g_content_name_guest.emplace(name, addr);
+    REXLOG_INFO("XamContentCreate: root name '{}' pinned at {:08X}", name, addr);
+    return addr;
+}
+
+void ForwardContentCreate(PPCFunc* orig, PPCContext& ctx, uint8_t* base) {
+    ctx.r4.u32 = PersistentGuestString(base, ctx.r4.u32);
+    if (orig) {
+        orig(ctx, base);
+    } else {
+        ctx.r3.u64 = 0x57;  // ERROR_INVALID_PARAMETER
+    }
+}
+
+}  // namespace
+
+extern "C" REX_FUNC(__imp__XamContentCreate) { ForwardContentCreate(g_orig_XamContentCreate, ctx, base); }
+extern "C" REX_FUNC(__imp__XamContentCreateEx) { ForwardContentCreate(g_orig_XamContentCreateEx, ctx, base); }
+
+namespace {
+
+void InstallContentCreateFix() {
+    g_orig_XamContentCreate = FindRuntimeExport("__imp__XamContentCreate");
+    g_orig_XamContentCreateEx = FindRuntimeExport("__imp__XamContentCreateEx");
+    REXLOG_INFO("XamContentCreate root-name fix: Create={} CreateEx={}", g_orig_XamContentCreate != nullptr,
+                g_orig_XamContentCreateEx != nullptr);
+    struct { const char* name; PPCFunc* func; } replacements[] = {
+        { "__imp__XamContentCreate", __imp__XamContentCreate },
+        { "__imp__XamContentCreateEx", __imp__XamContentCreateEx },
+    };
+    for (auto& r : replacements) {
+        bool found = false;
+        for (auto& [name, func] : rex::ppc::GetPPCFuncRegistry()) {
+            if (std::strcmp(name, r.name) == 0) { func = r.func; found = true; }
+        }
+        if (!found) rex::ppc::GetPPCFuncRegistry().emplace_back(r.name, r.func);
+    }
+}
+
+}  // namespace
+
 void InstallSerializedXInput() {
+    InstallContentCreateFix();
     g_orig_XamInputGetState = FindRuntimeExport("__imp__XamInputGetState");
     g_orig_XamInputGetCapabilities = FindRuntimeExport("__imp__XamInputGetCapabilities");
     g_orig_XamInputSetState = FindRuntimeExport("__imp__XamInputSetState");
