@@ -8,9 +8,22 @@
 
 #include <algorithm>
 #include <deque>
+#include <filesystem>
+#include <fstream>
+#include <functional>
 #include <mutex>
 #include <sstream>
 #include <vector>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 REXCVAR_DEFINE_STRING(c2_console_startup, "", "Game",
                       "Developer console commands to run once a few seconds after boot, separated by ';' "
@@ -39,6 +52,8 @@ std::mutex g_mutex;
 std::deque<std::string> g_queue;
 uint32_t g_ticks = 0;
 bool g_startup_done = false;
+std::mutex g_quit_mutex;
+std::function<void()> g_quit_handler;
 
 template <typename T>
 T ld(uint8_t* base, uint32_t addr) {
@@ -103,6 +118,88 @@ void QueueConsoleCommand(const std::string& command) {
   if (command.empty()) return;
   std::lock_guard<std::mutex> lock(g_mutex);
   g_queue.push_back(command);
+}
+
+void SetQuitHandler(std::function<void()> handler) {
+  std::lock_guard<std::mutex> lock(g_quit_mutex);
+  g_quit_handler = std::move(handler);
+}
+
+void RequestQuit() {
+  std::function<void()> handler;
+  {
+    std::lock_guard<std::mutex> lock(g_quit_mutex);
+    handler = g_quit_handler;
+  }
+  if (handler) {
+    REXLOG_INFO("console: quit requested from menu; closing window.");
+    handler();
+  } else {
+    REXLOG_WARN("console: quit requested but no quit handler installed.");
+  }
+}
+
+void RequestRestart() {
+#if defined(_WIN32)
+  wchar_t exe[MAX_PATH];
+  DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) {
+    REXLOG_ERROR("restart: GetModuleFileName failed; quitting instead.");
+    RequestQuit();
+    return;
+  }
+  std::filesystem::path exe_path(exe);
+
+  // Persist the changed cvars (resolution, render scale, ...) so the relaunched
+  // instance loads them from <exe>/crackdown2.toml at startup.
+  try {
+    rex::cvar::SaveConfig(exe_path.parent_path() / "crackdown2.toml");
+    REXLOG_INFO("restart: saved display settings to crackdown2.toml");
+  } catch (const std::exception& e) {
+    REXLOG_ERROR("restart: SaveConfig failed: {}", e.what());
+  }
+
+  // Relaunch only after this process has fully exited, so the exclusively-locked
+  // shader/pipeline cache is released first. A tiny detached cmd stub polls for
+  // our PID to disappear, then re-runs us with the exact same command line.
+  const DWORD pid = GetCurrentProcessId();
+  wchar_t tmp[MAX_PATH];
+  if (GetTempPathW(MAX_PATH, tmp) == 0) {
+    REXLOG_ERROR("restart: GetTempPath failed; quitting instead.");
+    RequestQuit();
+    return;
+  }
+  std::filesystem::path stub = std::filesystem::path(tmp) / "crackdown2_restart.cmd";
+  {
+    std::wofstream f(stub);
+    f << L"@echo off\r\n";
+    f << L":w\r\n";
+    f << L"tasklist /fi \"PID eq " << pid << L"\" 2>nul | find \"" << pid
+      << L"\" >nul && (ping -n 2 127.0.0.1 >nul & goto w)\r\n";
+    f << L"start \"\" " << GetCommandLineW() << L"\r\n";
+    f << L"del \"%~f0\"\r\n";
+  }
+
+  std::wstring cmdline = L"cmd.exe /c \"" + stub.wstring() + L"\"";
+  std::vector<wchar_t> buf(cmdline.begin(), cmdline.end());
+  buf.push_back(L'\0');
+  STARTUPINFOW si{};
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi{};
+  if (CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE,
+                     CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr,
+                     exe_path.parent_path().wstring().c_str(), &si, &pi)) {
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    REXLOG_INFO("restart: relaunch stub started; quitting to apply settings.");
+  } else {
+    REXLOG_ERROR("restart: CreateProcess failed ({}); quitting without relaunch.",
+                 static_cast<unsigned long>(GetLastError()));
+  }
+#else
+  REXLOG_WARN("restart: self-restart is only implemented on Windows; quitting.");
+#endif
+  RequestQuit();
 }
 
 }  // namespace c2

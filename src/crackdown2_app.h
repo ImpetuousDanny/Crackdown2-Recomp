@@ -10,6 +10,7 @@
 #include <rex/input/mnk/mnk_input_driver.h>
 #include <rex/rex_app.h>
 #include <rex/ui/keybinds.h>
+#include <rex/ui/window.h>
 
 #include "game_console.h"
 #include "graphics_menu.h"
@@ -41,6 +42,17 @@ class Crackdown2App : public rex::ReXApp {
   // Build our custom overlays and bind a key to toggle them. This runs after the
   // ImGuiDrawer exists, alongside the SDK's own overlays (debug F3, settings F4).
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
+    // The window exists by now, so give the main-menu EXIT row and the
+    // APPLY & RESTART row (src/native_menu.cpp) a clean-shutdown action. Closing
+    // the window on the UI thread runs its OnClosing path, which stops the
+    // guest, audio and GPU threads; RequestDeferredQuit alone skips that and
+    // leaves the process hanging.
+    c2::SetQuitHandler([this] {
+      app_context().CallInUIThreadDeferred([this] {
+        if (window()) window()->RequestClose();
+      });
+    });
+
     graphics_menu_ = std::make_unique<GraphicsMenu>(drawer);
     rex::ui::RegisterBind("bind_graphics_menu", "F5", "Toggle the Graphics menu",
                           [this] { graphics_menu_->ToggleVisible(); });

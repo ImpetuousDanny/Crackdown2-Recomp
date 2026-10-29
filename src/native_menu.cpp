@@ -52,6 +52,7 @@ REXCVAR_DEFINE_BOOL(c2_cheats, false, "Game",
 // plain symbol is a weak alias that a definition here replaces.
 extern "C" {
 void __imp__sub_828B5128(PPCContext& ctx, uint8_t* base);  // FeDisplayOptions::Init
+void __imp__sub_828AAAC8(PPCContext& ctx, uint8_t* base);  // FeMainMenu::Populate
 void sub_828F3260(PPCContext& ctx, uint8_t* base);         // Menu_AddItem(menu) -> item
 void sub_828F3400(PPCContext& ctx, uint8_t* base);         // Item_SetText(item, slot0, slot1)
 }
@@ -59,6 +60,9 @@ void sub_828F3400(PPCContext& ctx, uint8_t* base);         // Item_SetText(item,
 namespace {
 
 constexpr uint32_t kDisplayOptionsVtable = 0x82164968;
+// FeMainMenu (the top-level MAIN GAME / DELUGE / ... screen). It adds its five
+// stock rows in its Populate (sub_828AAAC8); we append an EXIT row after them.
+constexpr uint32_t kMainMenuVtable = 0x821638C0;
 
 // Menu object
 constexpr uint32_t kMenuItemsBegin = 44;
@@ -119,6 +123,8 @@ enum class RowKind {
   kCvar,          // A cycles a cvar through `choices`
   kCommandCycle,  // A runs `command` with the next choice substituted for %s
   kCommandOnce,   // A runs `command`; the row shows ACTIVATE / ON / OFF
+  kQuit,          // A cleanly quits the game to the desktop
+  kApplyRestart,  // A (twice, to confirm) saves settings and restarts the game
 };
 
 struct Row {
@@ -164,6 +170,8 @@ std::vector<Row> display_rows() {
        "readback_memexport", {kOnOff[0], kOnOff[1]}},
       {"GPU PAGE REFRESH", "RE-UPLOAD ALL CPU-WRITTEN GPU MEMORY EVERY FRAME. OFF IS ~12% FASTER IN GAME",
        RowKind::kCvar, "clear_memory_page_state", {kOnOff[0], kOnOff[1]}},
+      {"APPLY & RESTART", "SAVE THESE SETTINGS AND RESTART THE GAME (NEEDED FOR RESOLUTION / RENDER SCALE / "
+       "MSAA / AA CHANGES). PRESS AGAIN TO CONFIRM.", RowKind::kApplyRestart, nullptr, {kNone[0]}},
   };
 }
 
@@ -250,6 +258,10 @@ std::string row_value(const Row& row) {
     case RowKind::kCommandOnce:
       if (!row.command || !*row.command) return "";
       return row.toggle ? (row.state ? "ON" : "OFF") : "ACTIVATE";
+    case RowKind::kQuit:
+      return "";
+    case RowKind::kApplyRestart:
+      return row.state ? "CONFIRM?" : "APPLY";
   }
   return "";
 }
@@ -262,15 +274,27 @@ struct AddedRow {
 struct Screen {
   uint32_t vtable;
   std::vector<Row> rows;
+  // Display-option items keep their label in text slot 1 (the left column) and a
+  // value in slot 0. The main menu's own rows instead put their label in slot 0,
+  // so our appended rows there must match or they render in the wrong column.
+  bool label_slot0 = false;
   uint32_t screen = 0;     // screen object carrying our rows
   uint32_t first_row = 0;  // index of our first row in its menu
   std::vector<AddedRow> items;
 };
 
+// The single EXIT row appended to the top-level main menu.
+std::vector<Row> mainmenu_rows() {
+  return {
+      {"EXIT", "QUIT CRACKDOWN 2 TO THE DESKTOP", RowKind::kQuit, nullptr, {kNone[0]}},
+  };
+}
+
 Screen g_display{kDisplayOptionsVtable, display_rows()};
 Screen g_controls{kDisplayOptionsVtable, control_rows()};
 Screen g_hud{kDisplayOptionsVtable, cheat_rows()};
-Screen* const g_screens[] = {&g_display, &g_controls, &g_hud};
+Screen g_mainmenu{kMainMenuVtable, mainmenu_rows(), true};
+Screen* const g_screens[] = {&g_display, &g_controls, &g_hud, &g_mainmenu};
 
 // Append `scr.rows` to the first menu of `screen` (call after the stock Init).
 void append_rows(PPCContext& ctx, uint8_t* base, uint32_t screen, Screen& scr) {
@@ -283,6 +307,8 @@ void append_rows(PPCContext& ctx, uint8_t* base, uint32_t screen, Screen& scr) {
   scr.first_row = (ld<uint32_t>(base, menu + kMenuItemsEnd) - ld<uint32_t>(base, menu + kMenuItemsBegin)) / 4;
 
   for (Row& row : scr.rows) {
+    // Re-entering the screen disarms the APPLY & RESTART confirmation.
+    if (row.kind == RowKind::kApplyRestart) row.state = 0;
     if (row.kind == RowKind::kCvar) {
       const rex::cvar::FlagEntry* info = rex::cvar::GetFlagInfo(row.cvar);
       if (!info) continue;
@@ -310,8 +336,11 @@ void append_rows(PPCContext& ctx, uint8_t* base, uint32_t screen, Screen& scr) {
     uint32_t guest_value = rex::ppc::stack_push(ctx, base, value.data(), uint32_t(value.size()));
     uint32_t guest_label = rex::ppc::stack_push(ctx, base, label.data(), uint32_t(label.size()));
     ctx.r3.u32 = item;
-    ctx.r4.u32 = guest_value;  // slot 0: value column
-    ctx.r5.u32 = guest_label;  // slot 1: label column (what HUD OPACITY / GAMMA use)
+    // Display rows: value in slot 0 (centre), label in slot 1 (left column, what
+    // HUD OPACITY / GAMMA use). Main-menu rows keep the label in slot 0 to line up
+    // with the stock MAIN GAME / OPTIONS entries.
+    ctx.r4.u32 = scr.label_slot0 ? guest_label : guest_value;  // slot 0
+    ctx.r5.u32 = scr.label_slot0 ? guest_value : guest_label;  // slot 1
     sub_828F3400(ctx, base);
     // Each push is aligned on its own, so pop them one at a time in reverse.
     rex::ppc::stack_pop(ctx, uint32_t(label.size()));
@@ -363,6 +392,19 @@ void activate(Row& row) {
         if (row.toggle) row.state ^= 1;
       }
       break;
+    case RowKind::kQuit:
+      c2::RequestQuit();
+      break;
+    case RowKind::kApplyRestart:
+      // First press arms the confirmation (row shows CONFIRM?); second press
+      // saves the settings and restarts. Re-entering the screen re-disarms it.
+      if (row.state == 0) {
+        row.state = 1;
+      } else {
+        row.state = 0;
+        c2::RequestRestart();
+      }
+      break;
   }
 }
 
@@ -376,6 +418,14 @@ extern "C" void sub_828B5128(PPCContext& ctx, uint8_t* base) {  // FeDisplayOpti
   append_rows(ctx, base, screen, g_display);
   append_rows(ctx, base, screen, g_controls);
   if (REXCVAR_GET(c2_cheats)) append_rows(ctx, base, screen, g_hud);
+}
+
+// Replaces FeMainMenu::Populate: run the original (adds MAIN GAME / DELUGE /
+// KEYS TO THE CITY / MULTIPLAYER / OPTIONS), then append our EXIT row.
+extern "C" void sub_828AAAC8(PPCContext& ctx, uint8_t* base) {  // FeMainMenu::Populate
+  const uint32_t screen = ctx.r3.u32;
+  __imp__sub_828AAAC8(ctx, base);
+  append_rows(ctx, base, screen, g_mainmenu);
 }
 
 // Midasm hook just before the framework's screen->OnMenuEvent(0, menu, row)

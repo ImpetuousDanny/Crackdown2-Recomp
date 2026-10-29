@@ -14,11 +14,29 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include <rex/ppc.h>
 
 namespace c2 {
+
+// Provide the action that cleanly shuts the game down. The app wires this to
+// close its main window on the UI thread, which is what stops the guest, audio
+// and GPU threads (RequestDeferredQuit alone bypasses that OnClosing path and
+// leaves the process hanging). Called once the window exists, from
+// Crackdown2App::OnCreateDialogs.
+void SetQuitHandler(std::function<void()> handler);
+
+// Ask the app to shut down cleanly (flushes the shader cache and exits). Safe
+// from the game thread; the handler defers the window close to the UI thread.
+void RequestQuit();
+
+// Save the current cvars to crackdown2.toml and relaunch the game (so
+// restart-only display settings take effect), then quit this instance. The
+// relaunch waits for this process to exit first. Windows only; elsewhere it
+// just quits.
+void RequestRestart();
 
 // Run a console command right now on the calling guest thread.
 bool ExecConsoleCommand(PPCContext& ctx, uint8_t* base, const std::string& command);
