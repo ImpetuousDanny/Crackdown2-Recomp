@@ -160,6 +160,8 @@ std::vector<Row> display_rows() {
       {"UPSCALING FILTER", "OUTPUT FILTER: BILINEAR, CAS SHARPEN OR FSR", RowKind::kCvar,
        "present_effect",
        {{"bilinear", "BILINEAR"}, {"cas", "CAS"}, {"fsr", "FSR"}, {"fsr2", "FSR 2"}, {"fsr3", "FSR 3"}}},
+      {"GPU READBACK", "COPY GPU MEMEXPORT RESULTS BACK TO THE CPU. OFF IS 3-10X FASTER IN GAME", RowKind::kCvar,
+       "readback_memexport", {kOnOff[0], kOnOff[1]}},
   };
 }
 

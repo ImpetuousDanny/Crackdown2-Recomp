@@ -129,6 +129,27 @@ The runtime does not read LIVE/PIRS packages directly; marketplace content must 
 is still reported as unlicensed, launch with `--license_mask=0xFFFFFFFF` or use the DLC LICENSE cheat row
 (`togglelicenseoverride`). Deluge and Keys to the City need the Toy Box content.
 
+## Performance
+
+Measured on the NUC (Ryzen 9 7940HS / Radeon 780M, Windows 11, D3D12, 1280x720 window, `--vsync=false`) in the Agency tutorial
+room, turning the camera through twelve headings at one spot (`results/perf0c_*` vs `results/perf2c_*`):
+
+| Setting | Facing the gate | Facing the plain walls |
+| --- | --- | --- |
+| Defaults | 35 FPS | 3.5-17 FPS |
+| `--readback_memexport=false` | 36-45 FPS | 33-44 FPS |
+
+The runtime copies every memexport (GPU-to-memory) result back to the CPU by default, which stalls the whole GPU pipeline
+whenever the scene uses it. The game does not read those results on the CPU in anything observed so far, so the launcher
+(`tools/run_cd2.ps1`), the Options > Display **GPU READBACK** row and the F5 overlay all expose the switch; the launcher
+passes `--readback_memexport=false` unless you give it `-Readback`. The game's own loop runs at 250 Hz
+(`MainLoop` on the debug overlay), so the remaining cap is in GPU emulation, not the recompiled CPU code.
+
+Things that did not help on this hardware: `--occlusion_query_enable=false` (no change), `--native_2x_msaa=false`
+(no change). `--draw_resolution_scale_x/y=2` currently removes the D3D12 device at boot (`HRESULT 0x887A0001`), so leave
+RENDER SCALE at 1X on D3D12 for now. The in-game `perfgraph` and `gputiming` console commands (cheat rows PERF GRAPH / GPU
+TIMING) draw the game's own frame-time graphs for further digging.
+
 ## Stability notes
 
 * The runtime's `InputSystem::RefreshDevices()` rebuilds its device list without locking on every XInput call, and the
