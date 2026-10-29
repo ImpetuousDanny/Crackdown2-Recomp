@@ -7,6 +7,7 @@
 # -PageRefresh keeps the runtime's per-frame GPU page-state refresh on (default off: the game re-uploads ~20 MB of
 #           unchanged vertex data every frame with it on, see README "Performance").
 # -VSync    keeps v-sync on (default off so the frame rate is not capped at the display's refresh / 2).
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Config = "relwithdebinfo",
     [string]$Assets = "",
