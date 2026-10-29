@@ -71,16 +71,60 @@ invalidation on GFx texture updates; had no effect, so the missing text is not a
 
 ## Menus and settings
 
-* **F4** opens the SDK's settings overlay (every cvar by category); **F3** the debug overlay.
+* **F4** opens the SDK's settings overlay (every cvar by category, with **Rebind** buttons for the keyboard binds and a
+  **Save to config** button that writes `crackdown2.toml` next to the exe); **F3** the debug overlay.
+* **F5** opens this project's ImGui menu (`src/graphics_menu.h`): v-sync, fullscreen, FPS counter, 2x MSAA, upscaling
+  filter, resolution, internal render scale, GPU backend, keyboard/mouse mode, mouse look, mouse sensitivity, and a text
+  box that sends commands to the game's developer console (below).
 * **F6** toggles mouse look. With `--mnk_mouse=true` the mouse drives the right stick from startup; F6 releases the
-  cursor for the overlays and grabs it again.
-* **F5** opens this project's ImGui Graphics menu (`src/graphics_menu.h`): v-sync, fullscreen, FPS counter, 2x MSAA,
-  upscaling filter, resolution, internal render scale, GPU backend.
-* **Native rows in the game's own Options > Display screen** (`src/native_menu.cpp`): V-SYNC, FULLSCREEN, FPS COUNTER,
-  UPSCALING, 2X MSAA and INTERNAL RESOLUTION are appended after HUD OPACITY and GAMMA, drawn by the game's Scaleform menu
-  with its font, cursor, tooltips and sounds. Press A on a row to cycle its value; it writes the same cvars as the F5 menu.
+  cursor for the overlays and grabs it again. The SDK scales mouse movement per frame by `--mnk_sensitivity`
+  (default 1.0 is slow; try 5-10 for a desk mouse).
+* **Native rows in the game's own option screens** (`src/native_menu.cpp`), drawn by the game's Scaleform menu with its
+  font, cursor, tooltips and sounds. Press A on a row to cycle its value; the rows write real engine cvars:
+  * *Options > Display*: V-SYNC, FULLSCREEN, FPS COUNTER, RESOLUTION, RENDER SCALE (1x-4x internal resolution), 2X
+    MSAA, ANTI-ALIASING (FXAA), ANISOTROPIC FILTER, UPSCALING FILTER. Rows marked "after restart" need a relaunch.
+  * *Options > Controls*: KEYBOARD AND MOUSE, MOUSE LOOK, MOUSE SENSITIVITY, GAMEPAD DRIVER (SDL or XInput) and a
+    reminder that key rebinding lives in the F4 overlay.
+  * *Options > HUD* with `--c2_cheats=true`: the hidden cheat/debug menu (next section).
   The row framework is documented in `docs/native_menu.md` (component ids, vtable slots, item/text object layout, the
   bctrl call sites used by the midasm hook). No game assets are modified.
+
+## Controls
+
+* **Gamepad**: any SDL-recognised pad works out of the box (`--input_backend=sdl`, the default); `--input_backend=xinput`
+  selects the Windows XInput driver instead. A pad and the keyboard/mouse device both map to player 1 and are merged, so
+  there is nothing to switch.
+* **Keyboard and mouse** (`--mnk_mode`, plus `--mnk_mouse=true` for mouse look). Default binds: WASD = left stick,
+  arrows = right stick, Shift+arrows = d-pad, Space/; = A, Backspace/' = B, L = X, P = Y, Q/I = LT, E/O = RT, 1/3 =
+  bumpers, F/K = stick clicks, Enter/X = Start, Tab/Z = Back. Rebind with the F4 overlay (one key per bind) or set
+  `keybind_*` cvars on the command line / in `crackdown2.toml`, e.g. `--keybind_a="Space,LMB"`; a bind is a
+  comma-separated list of key names, each optionally prefixed with `Shift+`, `Ctrl+` or `Alt+`, and `LMB`/`RMB`/`MMB`
+  are valid names. Changes apply immediately.
+
+## Cheat menu and developer console
+
+The retail executable still contains Ruffian's developer console with ~730 commands (`docs/console_commands.md`). The
+recomp bridges to it from host code (`src/game_console.cpp`: the console object sits at Core+2804 and commands run
+through `Console_Execute`, `sub_825CE628`, on the game thread). Three ways in:
+
+* `--c2_cheats=true` appends a hidden cheat menu to **Options > HUD**: GOD MODE, INFINITE AMMO, ALL WEAPONS, MAX SKILLS,
+  FULL HEALTH, SUPPLY POINTS, ORBS, TIME OF DAY, RAIN, DIFFICULTY, SPAWN ENEMY, APOCALYPSE, WARP rows, FLY CAM, GAME FPS
+  CAP, PERF GRAPH, GPU TIMING and DLC LICENSE. Each row runs the matching console command (`god`, `loaded`,
+  `maxagentskills`, `TeleportPlayer x y z`, `summon <prototype>`, `todsetphase`, `setfps`, `perfgraph`, ...). The row
+  list is `cheat_rows()` in `src/native_menu.cpp`; add your own warp points as `TeleportPlayer x y z` (the game's Pos
+  readout on the F5/FPS overlay gives coordinates).
+* The **F5** overlay has a free-text console box: type any command, Enter runs it.
+* `--c2_console_startup="cmd1;cmd2"` runs commands a few seconds after boot (handy for `perfgraph;gputiming`).
+  `--c2_gdb_console_output_log=true` logs what the console prints.
+
+## DLC
+
+The runtime does not read LIVE/PIRS packages directly; marketplace content must be extracted into the user data root
+(`%LOCALAPPDATA%\crackdown2` on Windows, `~/.local/share/crackdown2` elsewhere) as
+`0000000000000000/4D5308BC/00000002/<package name>/` with a `Headers/00000002/<package name>.header` licence file.
+`tools/dlc_install.py <package> [...]` does this for Toy Box / Deluge packages (and writes a full licence mask). If a pack
+is still reported as unlicensed, launch with `--license_mask=0xFFFFFFFF` or use the DLC LICENSE cheat row
+(`togglelicenseoverride`). Deluge and Keys to the City need the Toy Box content.
 
 ## Stability notes
 

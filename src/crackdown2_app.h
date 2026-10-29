@@ -42,10 +42,11 @@ class Crackdown2App : public rex::ReXApp {
     rex::ui::RegisterBind("bind_graphics_menu", "F5", "Toggle the Graphics menu",
                           [this] { graphics_menu_->ToggleVisible(); });
 
-    // The SDK's keyboard/mouse driver only captures the mouse for the right
-    // stick while "mouse look" is active, and nothing in the runtime turns it
-    // on. Start with it on whenever --mnk_mouse is set, and let F6 release the
-    // cursor again for the ImGui overlays.
+    // The SDK's keyboard/mouse driver feeds the mouse to the right stick (and
+    // hides/captures the cursor) only while "mouse look" is active. Make that
+    // explicit whenever --mnk_mouse is set, and let F6 release the cursor again
+    // for the ImGui overlays. Mouse delta is scaled per frame by
+    // --mnk_sensitivity (default 1.0, which is very slow for a real mouse).
     if (rex::cvar::Query<bool>("mnk_mouse")) {
       rex::input::mnk::SetMouseLookActive(true);
     }

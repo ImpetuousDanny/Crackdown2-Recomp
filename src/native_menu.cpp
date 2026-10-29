@@ -1,4 +1,4 @@
-// crackdown2 - native "Graphics" rows inside the game's own Display Options screen.
+// crackdown2 - native rows inside the game's own front-end option screens.
 //
 // Crackdown 2's front-end menus are built in C++ on top of a generic row
 // framework (Scaleform GFx only renders the rows). Reverse-engineering notes
@@ -14,11 +14,19 @@
 //     YES/NO in slot 0 and rewrites that on toggle, which is what we copy.
 //   * Pressing A on a kind-3 row makes the framework call
 //     screen->OnMenuEvent(0, menuIdx, rowIdx) through a bctrl at 0x828F1014.
-//     Display Options uses the shared no-op for that slot, so we intercept the
-//     call site with a midasm hook and handle our own rows there.
+//     We intercept that call site with a midasm hook and handle our own rows
+//     there (the stock handlers ignore row indices they do not know).
 //
-// Result: the rows render with the game's font, cursor, sounds and legend,
-// scroll with the stock rows, and toggle real engine cvars when activated.
+// Screens we extend (all created at boot by the component factory):
+//   Options > Display  (id 28, vtable 0x82164968, Init sub_828B5128): graphics
+//   Options > Controls (id 29, vtable 0x82164910, Init sub_828B48D0): mouse,
+//                      keyboard and gamepad driver settings
+//   Options > HUD      (id 30, vtable 0x82164A18, Init sub_828B5358): hidden
+//                      cheat / debug rows, only when --c2_cheats=true. They
+//                      drive the game's own developer console (game_console.h).
+//
+// The rows render with the game's font, cursor, sounds and legend, scroll with
+// the stock rows, and change real engine cvars or run console commands.
 
 #include <rex/cvar.h>
 #include <rex/hook.h>
@@ -33,10 +41,18 @@
 #include <string>
 #include <vector>
 
+#include "game_console.h"
+
+REXCVAR_DEFINE_BOOL(c2_cheats, false, "Game",
+                    "Adds a hidden cheat/debug menu (god mode, weapons, skills, time of day, spawning, "
+                    "teleport, perf graphs) at the bottom of Options > HUD.");
+
 // Recompiled guest routines. `__imp__name` is always the original body; the
-// plain symbol is a weak alias that a REX_FUNC definition may replace.
+// plain symbol is a weak alias that a definition here replaces.
 extern "C" {
 void __imp__sub_828B5128(PPCContext& ctx, uint8_t* base);  // FeDisplayOptions::Init
+void __imp__sub_828B48D0(PPCContext& ctx, uint8_t* base);  // FeControlOptions::Init
+void __imp__sub_828B5358(PPCContext& ctx, uint8_t* base);  // FeHudOptions::Init
 void sub_828F3260(PPCContext& ctx, uint8_t* base);         // Menu_AddItem(menu) -> item
 void sub_828F3400(PPCContext& ctx, uint8_t* base);         // Item_SetText(item, slot0, slot1)
 }
@@ -44,6 +60,8 @@ void sub_828F3400(PPCContext& ctx, uint8_t* base);         // Item_SetText(item,
 namespace {
 
 constexpr uint32_t kDisplayOptionsVtable = 0x82164968;
+constexpr uint32_t kControlOptionsVtable = 0x82164910;
+constexpr uint32_t kHudOptionsVtable = 0x82164A18;
 
 // Menu object
 constexpr uint32_t kMenuItemsBegin = 44;
@@ -96,39 +114,121 @@ std::vector<uint8_t> encode_utf16(const std::string& s) {
 }
 
 struct Choice {
-  const char* value;  // cvar value
+  const char* value;  // cvar value, or the console command argument
   const char* shown;  // text on the row
+};
+
+enum class RowKind {
+  kCvar,          // A cycles a cvar through `choices`
+  kCommandCycle,  // A runs `command` with the next choice substituted for %s
+  kCommandOnce,   // A runs `command`; the row shows ACTIVATE / ON / OFF
 };
 
 struct Row {
   const char* label;
   const char* tip;
-  const char* cvar;
+  RowKind kind;
+  const char* cvar;  // kCvar
   std::vector<Choice> choices;
-  const char* mirror_cvar = nullptr;  // second cvar kept in lockstep (resolution scale y)
+  const char* mirror_cvar = nullptr;  // kCvar: second cvar kept in lockstep
+  const char* command = nullptr;      // kCommandCycle / kCommandOnce
+  bool toggle = false;                // kCommandOnce: the command toggles, show ON/OFF
+  size_t state = 0;                   // kCommand*: current choice / toggle state
 };
 
 const Choice kOnOff[] = {{"false", "OFF"}, {"true", "ON"}};
+const Choice kNone[] = {{"", ""}};
 
-std::vector<Row>& rows() {
-  static std::vector<Row> r = {
-      {"V-SYNC", "TOGGLE VERTICAL SYNC", "vsync", {kOnOff[0], kOnOff[1]}},
-      {"FULLSCREEN", "SWITCH BETWEEN WINDOWED AND FULLSCREEN", "fullscreen", {kOnOff[0], kOnOff[1]}},
-      {"FPS COUNTER", "SHOW THE FRAME RATE OVERLAY", "c2_fps_display", {kOnOff[0], kOnOff[1]}},
-      {"UPSCALING FILTER", "OUTPUT FILTER: BILINEAR, CAS SHARPEN OR FSR",
+std::vector<Row> display_rows() {
+  return {
+      {"V-SYNC", "TOGGLE VERTICAL SYNC", RowKind::kCvar, "vsync", {kOnOff[0], kOnOff[1]}},
+      {"FULLSCREEN", "SWITCH BETWEEN WINDOWED AND FULLSCREEN", RowKind::kCvar, "fullscreen",
+       {kOnOff[0], kOnOff[1]}},
+      {"FPS COUNTER", "SHOW THE FRAME RATE OVERLAY", RowKind::kCvar, "c2_fps_display",
+       {kOnOff[0], kOnOff[1]}},
+      {"RESOLUTION", "WINDOW / OUTPUT RESOLUTION (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
+       "resolution",
+       {{"", "AUTO"}, {"1280x720", "720P"}, {"1920x1080", "1080P"}, {"2560x1440", "1440P"}, {"3840x2160", "4K"}}},
+      {"RENDER SCALE", "INTERNAL RESOLUTION MULTIPLIER (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
+       "draw_resolution_scale_x",
+       {{"1", "1X"}, {"2", "2X"}, {"3", "3X"}, {"4", "4X"}},
+       "draw_resolution_scale_y"},
+      {"2X MSAA", "NATIVE 2X MSAA (TAKES EFFECT AFTER RESTART)", RowKind::kCvar, "native_2x_msaa",
+       {kOnOff[0], kOnOff[1]}},
+      {"ANTI-ALIASING", "POST-PROCESS AA ON THE FINAL IMAGE (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
+       "swap_post_effect",
+       {{"none", "OFF"}, {"fxaa", "FXAA"}, {"fxaa_extreme", "FXAA HIGH"}}},
+      {"ANISOTROPIC FILTER", "TEXTURE FILTERING QUALITY", RowKind::kCvar, "anisotropic_override",
+       {{"-1", "GAME"}, {"0", "OFF"}, {"2", "2X"}, {"3", "4X"}, {"4", "8X"}, {"5", "16X"}}},
+      {"UPSCALING FILTER", "OUTPUT FILTER: BILINEAR, CAS SHARPEN OR FSR", RowKind::kCvar,
        "present_effect",
        {{"bilinear", "BILINEAR"}, {"cas", "CAS"}, {"fsr", "FSR"}, {"fsr2", "FSR 2"}, {"fsr3", "FSR 3"}}},
-      {"2X MSAA", "NATIVE 2X MSAA (TAKES EFFECT AFTER RESTART)", "native_2x_msaa",
-       {kOnOff[0], kOnOff[1]}},
-      {"RENDER SCALE", "INTERNAL RESOLUTION MULTIPLIER (TAKES EFFECT AFTER RESTART)",
-       "draw_resolution_scale_x",
-       {{"1", "1X"}, {"2", "2X"}, {"3", "3X"}},
-       "draw_resolution_scale_y"},
   };
-  return r;
+}
+
+std::vector<Row> control_rows() {
+  return {
+      {"KEYBOARD AND MOUSE", "EMULATE A GAMEPAD WITH THE KEYBOARD AND MOUSE", RowKind::kCvar, "mnk_mode",
+       {kOnOff[0], kOnOff[1]}},
+      {"MOUSE LOOK", "MOUSE DRIVES THE RIGHT STICK (F6 ALSO TOGGLES)", RowKind::kCvar, "mnk_mouse",
+       {kOnOff[0], kOnOff[1]}},
+      {"MOUSE SENSITIVITY", "RIGHT STICK SPEED PER MOUSE MOVEMENT", RowKind::kCvar, "mnk_sensitivity",
+       {{"1", "1"}, {"2", "2"}, {"3", "3"}, {"5", "5"}, {"8", "8"}, {"10", "10"}}},
+      {"GAMEPAD DRIVER", "SDL (ANY PAD) OR XINPUT (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
+       "input_backend",
+       {{"sdl", "SDL"}, {"xinput", "XINPUT"}}},
+      {"KEY BINDINGS", "PRESS F4 IN GAME TO REBIND KEYS, THEN SAVE TO CONFIG", RowKind::kCommandOnce, nullptr,
+       {kNone[0]}, nullptr, ""},
+  };
+}
+
+std::vector<Row> cheat_rows() {
+  return {
+      {"GOD MODE", "PLAYER CANNOT BE DAMAGED", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr, "god", true},
+      {"INFINITE AMMO", "NEVER RUN OUT OF AMMUNITION", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "infiniteammo", true},
+      {"ALL WEAPONS", "GIVE THE AGENT ALL AVAILABLE EQUIPMENT", RowKind::kCommandOnce, nullptr, {kNone[0]},
+       nullptr, "loaded"},
+      {"MAX SKILLS", "SET EVERY AGENT SKILL TO MAXIMUM", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "maxagentskills"},
+      {"SKILLS UP", "INCREMENT EVERY AGENT SKILL", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "incallskills"},
+      {"FULL HEALTH", "RESTORE HEALTH", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr, "sethealth 100"},
+      {"SUPPLY POINTS", "UNLOCK ALL AGENCY SUPPLY POINTS", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "unlock_supply_points"},
+      {"ORBS", "TOGGLE AGILITY AND HIDDEN ORBS", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "toggleorbs", true},
+      {"TIME OF DAY", "ADVANCE THE TIME OF DAY PHASE", RowKind::kCommandCycle, nullptr,
+       {{"0.0", "0.00"}, {"0.25", "0.25"}, {"0.5", "0.50"}, {"0.75", "0.75"}}, nullptr, "todsetphase %s"},
+      {"RAIN", "MAKE IT RAIN AROUND THE PLAYER", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr, "rain"},
+      {"DIFFICULTY", "SET THE GAME DIFFICULTY", RowKind::kCommandCycle, nullptr,
+       {{"normal", "NORMAL"}, {"tough", "TOUGH"}, {"ruthless", "RUTHLESS"}, {"psychotic", "PSYCHOTIC"},
+        {"sadistic", "SADISTIC"}, {"veasy", "VERY EASY"}},
+       nullptr, "SetGameDifficulty %s"},
+      {"SPAWN ENEMY", "SUMMON A CELL PROTOTYPE NEXT TO THE PLAYER", RowKind::kCommandCycle, nullptr,
+       {{"Cell_Male_Bad", "CELL MALE"}, {"Cell_Female_Bad", "CELL FEMALE"}, {"Cell_Armoured", "CELL ARMOURED"}},
+       nullptr, "summon %s"},
+      {"APOCALYPSE", "KILL ALL BOTS (PLAYER TAKES CREDIT)", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "apocalypse"},
+      {"WARP TO AGENCY", "TELEPORT TO THE AGENCY TRAINING ROOM", RowKind::kCommandOnce, nullptr, {kNone[0]},
+       nullptr, "TeleportPlayer 1842 27 -1782"},
+      {"WARP UP", "TELEPORT 150M ABOVE THE AGENCY", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "TeleportPlayer 1842 180 -1782"},
+      {"FLY CAM", "TOGGLE THE FREE FLY CAMERA", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr, "flycam",
+       true},
+      {"GAME FPS CAP", "GAME LOGIC TARGET FRAME RATE", RowKind::kCommandCycle, nullptr,
+       {{"30", "30"}, {"60", "60"}, {"120", "120"}}, nullptr, "setfps %s"},
+      {"PERF GRAPH", "SHOW THE GAME'S CPU/GPU PERFORMANCE GRAPHS", RowKind::kCommandOnce, nullptr, {kNone[0]},
+       nullptr, "perfgraph", true},
+      {"GPU TIMING", "SHOW THE GAME'S GPU TIMING OVERLAY", RowKind::kCommandOnce, nullptr, {kNone[0]}, nullptr,
+       "gputiming", true},
+      {"DLC LICENSE", "OVERRIDE ALL DLC LICENSES (TEST INSTALLED CONTENT)", RowKind::kCommandOnce, nullptr,
+       {kNone[0]}, nullptr, "togglelicenseoverride", true},
+  };
 }
 
 size_t current_choice(const Row& row) {
+  if (row.kind != RowKind::kCvar) return row.state % std::max<size_t>(1, row.choices.size());
   if (!rex::cvar::GetFlagInfo(row.cvar)) return 0;
   std::string cur = rex::cvar::GetFlagByName(row.cvar);
   for (size_t i = 0; i < row.choices.size(); ++i) {
@@ -139,46 +239,63 @@ size_t current_choice(const Row& row) {
   return 0;
 }
 
-std::string row_value(const Row& row) { return row.choices[current_choice(row)].shown; }
+std::string row_value(const Row& row) {
+  switch (row.kind) {
+    case RowKind::kCvar:
+    case RowKind::kCommandCycle:
+      return row.choices.empty() ? "" : row.choices[current_choice(row)].shown;
+    case RowKind::kCommandOnce:
+      if (!row.command || !*row.command) return "";
+      return row.toggle ? (row.state ? "ON" : "OFF") : "ACTIVATE";
+  }
+  return "";
+}
 
-// Screen instance whose Display Options menu currently carries our rows, the
-// index of our first row within that menu, and the item pointers.
-uint32_t g_screen = 0;
-uint32_t g_first_row = 0;
-struct AddedRow { uint32_t item; size_t row; };
-std::vector<AddedRow> g_items;
+struct AddedRow {
+  uint32_t item;
+  size_t row;
+};
 
-}  // namespace
+struct Screen {
+  uint32_t vtable;
+  std::vector<Row> rows;
+  uint32_t screen = 0;     // screen object carrying our rows
+  uint32_t first_row = 0;  // index of our first row in its menu
+  std::vector<AddedRow> items;
+};
 
-// Replaces FeDisplayOptions::Init: run the original (loads OptionsScreen.gfx,
-// creates the menu, adds HUD OPACITY and GAMMA), then append our rows.
-extern "C" void sub_828B5128(PPCContext& ctx, uint8_t* base) {
-  const uint32_t screen = ctx.r3.u32;
-  __imp__sub_828B5128(ctx, base);
+Screen g_display{kDisplayOptionsVtable, display_rows()};
+Screen g_controls{kControlOptionsVtable, control_rows()};
+Screen g_hud{kHudOptionsVtable, cheat_rows()};
+Screen* const g_screens[] = {&g_display, &g_controls, &g_hud};
 
+// Append `scr.rows` to the first menu of `screen` (call after the stock Init).
+void append_rows(PPCContext& ctx, uint8_t* base, uint32_t screen, Screen& scr) {
   uint32_t menus = ld<uint32_t>(base, screen + 48);
   uint32_t menu = menus ? ld<uint32_t>(base, menus) : 0;
   if (!menu) return;
 
-  g_screen = screen;
-  g_items.clear();
-  g_first_row = (ld<uint32_t>(base, menu + kMenuItemsEnd) - ld<uint32_t>(base, menu + kMenuItemsBegin)) / 4;
+  scr.screen = screen;
+  scr.items.clear();
+  scr.first_row = (ld<uint32_t>(base, menu + kMenuItemsEnd) - ld<uint32_t>(base, menu + kMenuItemsBegin)) / 4;
 
-  for (Row& row : rows()) {
-    const rex::cvar::FlagEntry* info = rex::cvar::GetFlagInfo(row.cvar);
-    if (!info) continue;
-    // Keep only the values this runtime build accepts (e.g. present_effect is
-    // bilinear-only when the SDK was built without FidelityFX), and drop rows
-    // that would have nothing to cycle through.
-    if (info->constraints.HasAllowedValues()) {
-      const auto& allowed = info->constraints.allowed_values;
-      std::vector<Choice> kept;
-      for (const Choice& c : row.choices) {
-        if (std::find(allowed.begin(), allowed.end(), c.value) != allowed.end()) kept.push_back(c);
+  for (Row& row : scr.rows) {
+    if (row.kind == RowKind::kCvar) {
+      const rex::cvar::FlagEntry* info = rex::cvar::GetFlagInfo(row.cvar);
+      if (!info) continue;
+      // Keep only the values this runtime build accepts (e.g. present_effect
+      // is bilinear-only when the SDK was built without FidelityFX), and drop
+      // rows that would have nothing to cycle through.
+      if (info->constraints.HasAllowedValues()) {
+        const auto& allowed = info->constraints.allowed_values;
+        std::vector<Choice> kept;
+        for (const Choice& c : row.choices) {
+          if (std::find(allowed.begin(), allowed.end(), c.value) != allowed.end()) kept.push_back(c);
+        }
+        row.choices = std::move(kept);
       }
-      row.choices = std::move(kept);
+      if (row.choices.size() < 2) continue;
     }
-    if (row.choices.size() < 2) continue;
 
     ctx.r3.u32 = menu;
     sub_828F3260(ctx, base);
@@ -202,8 +319,70 @@ extern "C" void sub_828B5128(PPCContext& ctx, uint8_t* base) {
     put_utf16(base, item + kItemTip, row.tip, kTextChars);
     st<uint32_t>(base, item + kItemKind, kItemKindNotifyOnly);
     st<int32_t>(base, item + kItemAction, -1);
-    g_items.push_back({item, size_t(&row - rows().data())});
+    scr.items.push_back({item, size_t(&row - scr.rows.data())});
   }
+}
+
+void refresh_row_text(uint8_t* base, uint32_t item, const Row& row) {
+  const uint32_t texts = ld<uint32_t>(base, item + kItemTexts);
+  const uint32_t text_index = ld<uint32_t>(base, item + kItemTextIndex);
+  const uint32_t text_obj = texts ? ld<uint32_t>(base, texts + text_index * 4) : 0;
+  if (!text_obj) return;
+  put_utf16(base, text_obj + kTextSlot0, row_value(row), kTextChars);
+  base[text_obj + kTextHasSlot0] = 1;
+  base[item + kItemDirty] = 1;
+}
+
+std::string substitute(const char* command, const char* arg) {
+  std::string s = command ? command : "";
+  size_t p = s.find("%s");
+  if (p != std::string::npos) s.replace(p, 2, arg ? arg : "");
+  return s;
+}
+
+void activate(Row& row) {
+  switch (row.kind) {
+    case RowKind::kCvar: {
+      const size_t next = (current_choice(row) + 1) % row.choices.size();
+      rex::cvar::SetFlagByName(row.cvar, row.choices[next].value);
+      if (row.mirror_cvar && rex::cvar::GetFlagInfo(row.mirror_cvar)) {
+        rex::cvar::SetFlagByName(row.mirror_cvar, row.choices[next].value);
+      }
+      break;
+    }
+    case RowKind::kCommandCycle:
+      row.state = (row.state + 1) % row.choices.size();
+      c2::QueueConsoleCommand(substitute(row.command, row.choices[row.state].value));
+      break;
+    case RowKind::kCommandOnce:
+      if (row.command && *row.command) {
+        c2::QueueConsoleCommand(row.command);
+        if (row.toggle) row.state ^= 1;
+      }
+      break;
+  }
+}
+
+}  // namespace
+
+// Replaces the screens' Init: run the original (loads the movie, creates the
+// menu, adds the stock rows), then append ours.
+extern "C" void sub_828B5128(PPCContext& ctx, uint8_t* base) {  // FeDisplayOptions::Init
+  const uint32_t screen = ctx.r3.u32;
+  __imp__sub_828B5128(ctx, base);
+  append_rows(ctx, base, screen, g_display);
+}
+
+extern "C" void sub_828B48D0(PPCContext& ctx, uint8_t* base) {  // FeControlOptions::Init
+  const uint32_t screen = ctx.r3.u32;
+  __imp__sub_828B48D0(ctx, base);
+  append_rows(ctx, base, screen, g_controls);
+}
+
+extern "C" void sub_828B5358(PPCContext& ctx, uint8_t* base) {  // FeHudOptions::Init
+  const uint32_t screen = ctx.r3.u32;
+  __imp__sub_828B5358(ctx, base);
+  if (REXCVAR_GET(c2_cheats)) append_rows(ctx, base, screen, g_hud);
 }
 
 // Midasm hook just before the framework's screen->OnMenuEvent(0, menu, row)
@@ -213,29 +392,23 @@ void C2MenuItemActivated(PPCRegister& r3, PPCRegister& r5, PPCRegister& r6, PPCR
   (void)r5;
   uint8_t* base = guest_base();
   const uint32_t screen = r3.u32;
-  if (!screen || screen != g_screen) return;
-  if (ld<uint32_t>(base, screen) != kDisplayOptionsVtable) return;
+  if (!screen) return;
+  const uint32_t vtable = ld<uint32_t>(base, screen);
 
-  const int32_t selected = int32_t(r6.u32);
-  const int32_t index = selected - int32_t(g_first_row);
-  if (index < 0 || size_t(index) >= g_items.size()) return;
+  for (Screen* scr : g_screens) {
+    if (screen != scr->screen || vtable != scr->vtable) continue;
 
-  const uint32_t menu = r26.u32;
-  const uint32_t item = ld<uint32_t>(base, ld<uint32_t>(base, menu + kMenuItemsBegin) + uint32_t(selected) * 4);
-  if (item != g_items[size_t(index)].item) return;
+    const int32_t selected = int32_t(r6.u32);
+    const int32_t index = selected - int32_t(scr->first_row);
+    if (index < 0 || size_t(index) >= scr->items.size()) return;
 
-  Row& row = rows()[g_items[size_t(index)].row];
-  const size_t next = (current_choice(row) + 1) % row.choices.size();
-  rex::cvar::SetFlagByName(row.cvar, row.choices[next].value);
-  if (row.mirror_cvar && rex::cvar::GetFlagInfo(row.mirror_cvar)) {
-    rex::cvar::SetFlagByName(row.mirror_cvar, row.choices[next].value);
+    const uint32_t menu = r26.u32;
+    const uint32_t item = ld<uint32_t>(base, ld<uint32_t>(base, menu + kMenuItemsBegin) + uint32_t(selected) * 4);
+    if (item != scr->items[size_t(index)].item) return;
+
+    Row& row = scr->rows[scr->items[size_t(index)].row];
+    activate(row);
+    refresh_row_text(base, item, row);
+    return;
   }
-
-  const uint32_t texts = ld<uint32_t>(base, item + kItemTexts);
-  const uint32_t text_index = ld<uint32_t>(base, item + kItemTextIndex);
-  const uint32_t text_obj = texts ? ld<uint32_t>(base, texts + text_index * 4) : 0;
-  if (!text_obj) return;
-  put_utf16(base, text_obj + kTextSlot0, row_value(row), kTextChars);
-  base[text_obj + kTextHasSlot0] = 1;
-  base[item + kItemDirty] = 1;
 }

@@ -25,6 +25,8 @@
 
 #include <imgui.h>
 
+#include "game_console.h"
+
 class GraphicsMenu : public rex::ui::ImGuiDialog {
  public:
   explicit GraphicsMenu(rex::ui::ImGuiDrawer* drawer) : rex::ui::ImGuiDialog(drawer) {}
@@ -64,6 +66,11 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
     ComboRow("GPU backend *", "c2_gpu_backend", {"any", "d3d12", "vulkan"});
 
     ImGui::Separator();
+    BoolRow("Keyboard and mouse", "mnk_mode");
+    BoolRow("Mouse look", "mnk_mouse");
+    DoubleSliderRow("Mouse sensitivity", "mnk_sensitivity", 0.1, 10.0);
+
+    ImGui::Separator();
     if (ImGui::Button("Reset these to defaults")) {
       for (const char* n : {"vsync", "fullscreen", "c2_fps_display", "native_2x_msaa",
                             "present_effect", "resolution", "draw_resolution_scale_x",
@@ -72,6 +79,25 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
           rex::cvar::ResetToDefault(n);
         }
       }
+    }
+
+    ImGui::Separator();
+    ImGui::TextDisabled("Game developer console (docs/console_commands.md), e.g. god, loaded, TeleportPlayer x y z");
+    ImGui::SetNextItemWidth(360.0f);
+    if (ImGui::InputText("##c2console", console_buf_, sizeof(console_buf_),
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+      c2::QueueConsoleCommand(console_buf_);
+      last_command_ = console_buf_;
+      console_buf_[0] = '\0';
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Run") && console_buf_[0]) {
+      c2::QueueConsoleCommand(console_buf_);
+      last_command_ = console_buf_;
+      console_buf_[0] = '\0';
+    }
+    if (!last_command_.empty()) {
+      ImGui::TextDisabled("sent: %s", last_command_.c_str());
     }
 
     auto pending = rex::cvar::GetPendingRestartFlags();
@@ -113,6 +139,17 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
     }
   }
 
+  void DoubleSliderRow(const char* label, const char* cvar, double lo, double hi) {
+    if (!Exists(cvar)) {
+      return;
+    }
+    float v = static_cast<float>(rex::cvar::Query<double>(cvar));
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderFloat(label, &v, static_cast<float>(lo), static_cast<float>(hi), "%.1f")) {
+      rex::cvar::SetFlagByName(cvar, std::to_string(v));
+    }
+  }
+
   void ComboRow(const char* label, const char* cvar, std::vector<const char*> options) {
     if (!Exists(cvar)) {
       return;
@@ -136,4 +173,6 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
   }
 
   bool visible_ = false;
+  char console_buf_[256] = {};
+  std::string last_command_;
 };
