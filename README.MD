@@ -150,6 +150,21 @@ Things that did not help on this hardware: `--occlusion_query_enable=false` (no 
 RENDER SCALE at 1X on D3D12 for now. The in-game `perfgraph` and `gputiming` console commands (cheat rows PERF GRAPH / GPU
 TIMING) draw the game's own frame-time graphs for further digging.
 
+### Profiling
+
+Every non-Release SDK configuration (the `*-relwithdebinfo` presets) has Tracy zones, call-stack sampling and a
+per-frame counter registry compiled in; the runtime just never switches them on. Two flags do:
+
+* `--c2_perf_csv=<file>` writes one line per guest frame (frame time, draw calls, command-buffer stalls, texture and
+  pipeline cache hits). `tools/perf_csv_summary.py <file> [window_s]` prints rolling averages, 1% lows and draws per
+  frame. A healthy title screen is ~446 draws/frame; the Agency tutorial room is ~6,000.
+* `--c2_profile=true` starts the Tracy listener on TCP 8086. Windows Firewall blocks it from other machines (and pops
+  an allow/deny prompt on first use), so capture on the same machine: build `capture` from the SDK's
+  `thirdparty/tracy` and run `tracy-capture -a 127.0.0.1 -o run.tracy -s 30 -f` while the game is at the spot you
+  care about. `tools/tracy_sampdump` (built against the same Tracy tree, see its CMakeLists) dumps per-thread sampled
+  hotspots and zone totals as text; the stock Tracy UI opens the file too. The prebuilt SDK DLLs ship without PDBs,
+  so symbols inside `rexgpu-xenosrd.dll` only resolve if you put a from-source build (DLL + PDB) beside the exe.
+
 ## Stability notes
 
 * The runtime's `InputSystem::RefreshDevices()` rebuilds its device list without locking on every XInput call, and the
