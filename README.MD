@@ -8,22 +8,26 @@ zips; the steps below turn your disc into the `assets` folder the recomp reads.
    listed under *Hashes* below.
 2. **Get Title Update 5** (the `xexp` container from Xbox Live; its SHA-256 is also listed below). TU5 is required: the
    recompiled code is generated from the patched executable, and the runtime mounts the extracted update as `update:`.
-3. **Extract both** with the pure-Python tools in `tools/` (Python 3.8+, no extra packages):
+3. **Set it up in one go** (Python 3.8+, no extra packages). From the release folder or the repo root:
    ```
-   python tools\xdvdfs_extract.py <game.iso> assets
-   python tools\stfs_extract.py <TU5 file> tu5
+   python tools\setup_game.py --iso <game.iso> --tu <TU5 file> [--dlc <package> ...]
    ```
-   `assets\` now holds `default.xex` plus the game data; `tu5\` holds the update, including its `xexp`. Copy the `xexp`
-   into `assets\` as well (codegen reads it from there) and keep `tu5\` for the `-Update` switch at run time.
+   This extracts the disc to `game\assets`, the update to `game\tu5`, puts `default.xexp` beside `default.xex`
+   (codegen applies it from there), checks both against the hashes below, installs any DLC packages you pass, and
+   writes `cd2_game.json` so the launcher knows the paths. Already-extracted folders are accepted in place of the
+   ISO / update file and are used where they are. The individual steps are `tools\xdvdfs_extract.py`,
+   `tools\stfs_extract.py` and `tools\dlc_install.py` if you prefer to run them yourself.
 4. **Either use a release build or compile:**
-   * *Release zip* (Windows x64, from this fork's GitHub Releases page): extract it anywhere, then
+   * *Release zip* (Windows x64, from this fork's GitHub Releases page): extract it anywhere, run the setup above
+     from inside it, then
      ```
-     .\tools\run_cd2.ps1 -Assets <path\to\assets> -Update <path\to\tu5>
+     .\tools\run_cd2.ps1
      ```
      The zip holds `crackdown2.exe`, the two rexglue SDK DLLs, `tools\`, `docs\` and this README. No game data.
-   * *Compile it yourself*: follow *To build* / *Windows build* below. Codegen runs as the first build step and needs
-     `assets\default.xex` and the `xexp` in place; a clean Windows build takes about five minutes plus codegen.
-5. **Optional DLC**: `python tools\dlc_install.py <package> [...]` installs your own Toy Box / Deluge packages (see *DLC*).
+   * *Compile it yourself*: run the setup with `--dest .` (or point `--iso` at the folder you extracted into
+     `assets\`), then follow *To build* / *Windows build* below. Codegen runs as the first build step and needs
+     `assets\default.xex` and `assets\default.xexp`; a clean Windows build takes about five minutes plus codegen.
+5. **DLC later**: `python tools\setup_game.py ... --dlc <package> [...]` or `tools\dlc_install.py` directly (see *DLC*).
 6. **Play**: Options > Display holds the graphics, input and (with `-Cheats`) cheat rows; F5 opens the overlay with
    a developer-console prompt; F4 rebinds keys. See *Controls* and *Performance* for the defaults the launcher applies.
 

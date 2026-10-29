@@ -1,5 +1,6 @@
 # Launch the Crackdown 2 recomp on Windows.
 #   .\tools\run_cd2.ps1 [-Config relwithdebinfo|debug|release] [-Assets <path>] [-Update <path>] [-Backend any|d3d12|vulkan]
+#   (-Assets/-Update default to the paths tools\setup_game.py wrote to cd2_game.json)
 #                       [-Cheats] [-Readback] [-PageRefresh] [-VSync] [extra args...]
 # -Cheats   enables the hidden cheat rows at the end of Options > Display (--c2_cheats=true).
 # -Readback keeps the runtime's GPU memexport readback on (default off: 3-10x faster in game, see README "Performance").
@@ -18,7 +19,17 @@ param(
     [Parameter(ValueFromRemainingArguments = $true)] [string[]]$Rest
 )
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# tools\setup_game.py records the extracted disc and title update paths here.
+$cfgPath = Join-Path $root "cd2_game.json"
+if (Test-Path $cfgPath) {
+    $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+    if ($Assets -eq "" -and $cfg.assets) { $Assets = $cfg.assets }
+    if ($Update -eq "" -and $cfg.update) { $Update = $cfg.update }
+}
 if ($Assets -eq "") { $Assets = Join-Path $root "assets" }
+if (-not (Test-Path (Join-Path $Assets "default.xex"))) {
+    Write-Error "No default.xex in $Assets. Run: python tools\setup_game.py --iso <disc.iso> --tu <title update> [--dlc <packages>]"; exit 1
+}
 $build = Join-Path $root "out\build\win-amd64-$Config"
 $exe = Join-Path $build "crackdown2.exe"
 # Release zips ship crackdown2.exe next to this script's parent folder instead of under out\build.
