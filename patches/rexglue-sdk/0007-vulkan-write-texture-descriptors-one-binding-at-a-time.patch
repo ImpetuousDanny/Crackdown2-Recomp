@@ -12,7 +12,7 @@ index 5787b81..e2743ab 100644
    std::unique_ptr<ui::vulkan::VulkanUploadBufferPool> uniform_buffer_pool_;
  
 diff --git a/src/graphics/vulkan/command_processor.cpp b/src/graphics/vulkan/command_processor.cpp
-index c4c70ad..dd7bb54 100644
+index c4c70ad..ccd4735 100644
 --- a/src/graphics/vulkan/command_processor.cpp
 +++ b/src/graphics/vulkan/command_processor.cpp
 @@ -6633,8 +6633,11 @@ bool VulkanCommandProcessor::UpdateBindings(const VulkanShader* vertex_shader,
@@ -65,27 +65,18 @@ index c4c70ad..dd7bb54 100644
                                 nullptr);
    }
    // Only make valid if all descriptor sets have been allocated and written
-@@ -6796,31 +6799,26 @@ uint32_t VulkanCommandProcessor::WriteTransientTextureBindings(
+@@ -6796,31 +6799,56 @@ uint32_t VulkanCommandProcessor::WriteTransientTextureBindings(
    used_texture_descriptor_set.layout = texture_descriptor_set_layout_key;
    used_texture_descriptor_set.set = texture_descriptor_set;
    uint32_t descriptor_set_write_count = 0;
 -  if (texture_count) {
-+  // Each texture and sampler is its own binding with descriptorCount 1. Write
-+  // them one binding per VkWriteDescriptorSet rather than one write whose
-+  // descriptorCount rolls over into the following bindings: the roll-over is
-+  // valid Vulkan, but the PowerVR driver (Pixel 10) mishandles it and binds
-+  // the last image to every binding, so e.g. all three planes of a YUV video
-+  // sample the same texture.
-+  for (uint32_t i = 0; i < texture_count + sampler_count; ++i) {
-+    bool is_texture = i < texture_count;
-     VkWriteDescriptorSet& descriptor_set_write =
-         descriptor_set_writes_out[descriptor_set_write_count++];
-     descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-     descriptor_set_write.pNext = nullptr;
-     descriptor_set_write.dstSet = texture_descriptor_set;
+-    VkWriteDescriptorSet& descriptor_set_write =
+-        descriptor_set_writes_out[descriptor_set_write_count++];
+-    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+-    descriptor_set_write.pNext = nullptr;
+-    descriptor_set_write.dstSet = texture_descriptor_set;
 -    descriptor_set_write.dstBinding = 0;
-+    descriptor_set_write.dstBinding = i;
-     descriptor_set_write.dstArrayElement = 0;
+-    descriptor_set_write.dstArrayElement = 0;
 -    descriptor_set_write.descriptorCount = texture_count;
 -    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 -    descriptor_set_write.pImageInfo = texture_image_info;
@@ -93,13 +84,52 @@ index c4c70ad..dd7bb54 100644
 -    descriptor_set_write.pTexelBufferView = nullptr;
 -  }
 -  if (sampler_count) {
--    VkWriteDescriptorSet& descriptor_set_write =
--        descriptor_set_writes_out[descriptor_set_write_count++];
--    descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
--    descriptor_set_write.pNext = nullptr;
--    descriptor_set_write.dstSet = texture_descriptor_set;
++  // Each texture and sampler is its own binding with descriptorCount 1. Write
++  // them one binding per VkWriteDescriptorSet rather than one write whose
++  // descriptorCount rolls over into the following bindings: the roll-over is
++  // valid Vulkan, but the PowerVR driver (Pixel 10) mishandles it and binds
++  // the last image to every binding, so e.g. all three planes of a YUV video
++  // sample the same texture.
++  // Only the PowerVR driver needs this; elsewhere keep the cheaper single
++  // write per descriptor type (rolling over consecutive bindings).
++  const ui::vulkan::VulkanDevice::Properties& device_properties = GetVulkanDevice()->properties();
++  const bool split_descriptor_writes =
++      device_properties.driverID == VK_DRIVER_ID_IMAGINATION_PROPRIETARY ||
++      device_properties.vendorID == 0x1010;
++  if (!split_descriptor_writes) {
++    if (texture_count) {
++      VkWriteDescriptorSet& descriptor_set_write =
++          descriptor_set_writes_out[descriptor_set_write_count++];
++      descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
++      descriptor_set_write.dstSet = texture_descriptor_set;
++      descriptor_set_write.dstBinding = 0;
++      descriptor_set_write.descriptorCount = texture_count;
++      descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
++      descriptor_set_write.pImageInfo = texture_image_info;
++    }
++    if (sampler_count) {
++      VkWriteDescriptorSet& descriptor_set_write =
++          descriptor_set_writes_out[descriptor_set_write_count++];
++      descriptor_set_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
++      descriptor_set_write.dstSet = texture_descriptor_set;
++      descriptor_set_write.dstBinding = texture_count;
++      descriptor_set_write.descriptorCount = sampler_count;
++      descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
++      descriptor_set_write.pImageInfo = sampler_image_info;
++    }
++    assert_not_zero(descriptor_set_write_count);
++    return descriptor_set_write_count;
++  }
++  for (uint32_t i = 0; i < texture_count + sampler_count; ++i) {
++    bool is_texture = i < texture_count;
+     VkWriteDescriptorSet& descriptor_set_write =
+         descriptor_set_writes_out[descriptor_set_write_count++];
+     descriptor_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+     descriptor_set_write.pNext = nullptr;
+     descriptor_set_write.dstSet = texture_descriptor_set;
 -    descriptor_set_write.dstBinding = texture_count;
--    descriptor_set_write.dstArrayElement = 0;
++    descriptor_set_write.dstBinding = i;
+     descriptor_set_write.dstArrayElement = 0;
 -    descriptor_set_write.descriptorCount = sampler_count;
 -    descriptor_set_write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
 -    descriptor_set_write.pImageInfo = sampler_image_info;

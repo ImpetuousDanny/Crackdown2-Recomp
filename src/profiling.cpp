@@ -38,6 +38,9 @@ REXCVAR_DEFINE_INT32(c2_cpu_sample_after, 0, "Debug",
                      "Linux/Android: start a signal-based CPU sampler this many seconds after launch "
                      "(0 = off). Writes per-thread hot code addresses to c2_cpu_sample_out.");
 REXCVAR_DEFINE_INT32(c2_cpu_sample_seconds, 15, "Debug", "Length of the CPU sampler run in seconds.");
+REXCVAR_DEFINE_STRING(c2_cpu_sample_trigger, "", "Debug",
+                      "Linux/Android: path of a trigger file; whenever it appears the CPU sampler "
+                      "deletes it and runs once (alternative to c2_cpu_sample_after).");
 REXCVAR_DEFINE_STRING(c2_cpu_sample_out, "", "Debug",
                       "Output file for the CPU sampler (default: cpu_samples.txt beside the log).");
 REXCVAR_DECLARE(std::string, log_file);
@@ -123,7 +126,10 @@ bool ThreadIsRunning(const std::string& tid) {
 
 void RunCpuSampler(int after_s, int duration_s, std::string out_path) {
   std::this_thread::sleep_for(std::chrono::seconds(after_s));
-  g_samples = new CpuSample[kMaxSamples];
+  if (!g_samples) {
+    g_samples = new CpuSample[kMaxSamples];
+  }
+  g_sample_count = 0;
   struct sigaction sa = {};
   sa.sa_sigaction = CpuSampleHandler;
   sa.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -230,7 +236,7 @@ void RunCpuSampler(int after_s, int duration_s, std::string out_path) {
       hot.push_back({count, key});
     }
     std::sort(hot.rbegin(), hot.rend());
-    for (size_t i = 0; i < hot.size() && i < 40; ++i) {
+    for (size_t i = 0; i < hot.size() && i < 100000; ++i) {
       std::fprintf(f, "  %llu %s 0x%zx\n", (unsigned long long)hot[i].first,
                    hot[i].second.first.c_str(), size_t(hot[i].second.second));
     }
@@ -254,6 +260,23 @@ void RunCpuSampler(int after_s, int duration_s, std::string out_path) {
 
 void StartProfilingIfRequested() {
 #if defined(__linux__) || defined(__ANDROID__)
+  if (!REXCVAR_GET(c2_cpu_sample_trigger).empty()) {
+    std::string trigger = REXCVAR_GET(c2_cpu_sample_trigger);
+    std::string out = REXCVAR_GET(c2_cpu_sample_out);
+    if (out.empty()) {
+      out = trigger + ".txt";
+    }
+    int duration = int(REXCVAR_GET(c2_cpu_sample_seconds));
+    std::thread([trigger, out, duration]() {
+      for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (access(trigger.c_str(), F_OK) == 0) {
+          unlink(trigger.c_str());
+          RunCpuSampler(0, duration, out);
+        }
+      }
+    }).detach();
+  }
   if (REXCVAR_GET(c2_cpu_sample_after) > 0) {
     std::string out = REXCVAR_GET(c2_cpu_sample_out);
     if (out.empty()) {
