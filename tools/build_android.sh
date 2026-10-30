@@ -33,12 +33,19 @@ configure() {
     -DREXGLUE_BUILD_TESTS=OFF -DREXGLUE_RECOMP_DEBUG_INFO=none -Wno-dev
 }
 native() {
-  "$CMAKE" --build "$BUILD" --target crackdown2 -j"${JOBS:-$(nproc)}"
+  "$CMAKE" --build "$BUILD" --target crackdown2 --target rexgpu-xenos -j"${JOBS:-$(nproc)}"
+}
+cmake_build_plugin() {
+  "$CMAKE" --build "$BUILD" --target rexgpu-xenos --target rexruntime -j"${JOBS:-$(nproc)}"
 }
 stage() {
   local jni="$ROOT/android/app/src/main/jniLibs/arm64-v8a"
   mkdir -p "$jni"
-  cp -v "$BUILD/libmain.so" "$BUILD/librexgpu-xenos.so" "$jni/"
+  # The GPU plugin is not a link dependency of the game, so the copy beside the
+  # game in $BUILD can be stale; take it (and the runtime) from the SDK output.
+  cmake_build_plugin
+  cp -v "$BUILD/libmain.so" "$jni/"
+  cp -v "$SDK_SRC/out/android-arm64/librexgpu-xenos.so" "$jni/"
   cp -v "$SDK_SRC/out/android-arm64/librexruntime.so" "$jni/"
   cp -v "$SDK_SRC/out/android-arm64/libSDL3.so" "$jni/"
   cp -v "$NDK"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so "$jni/"

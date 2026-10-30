@@ -25,7 +25,11 @@ android {
     packaging { jniLibs { useLegacyPackaging true } }
 
     buildTypes {
-        release { minifyEnabled false; signingConfig signingConfigs.debug }
+        release {
+            minifyEnabled false; signingConfig signingConfigs.debug
+            // -Pdebuggable=true makes the APK capturable by RenderDoc / GPU debug layers.
+            debuggable project.hasProperty('debuggable') && project.property('debuggable') == 'true'
+        }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
