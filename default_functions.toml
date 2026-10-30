@@ -396,7 +396,7 @@ longjmp_address = 0x82F21740
 0x82C7B7F0 = { name = "CXrnmEndpoint_ProcessRecvCallback", size = 128 }
 0x82F32A00 = { name = "__tsopen_nolock", size = 1328 }
 0x82F379C8 = { name = "__get_fmode", size = 100 }
-0x82F1EB18 = { name = "__errno", size = 56 }
+0x82F1EB18 = { name = "cd2___errno", size = 56 }
 0x82F377A8 = { name = "__chsize_nolock", size = 400 }
 0x82917058 = { name = "SKAppStart", size = 1000 }
 0x82BA3A30 = { name = "Device_Start", size = 100 }

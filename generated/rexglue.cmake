@@ -114,6 +114,7 @@ endmacro()
 # codegen, including one a project assembles itself rather than taking the
 # library rexglue_setup_target() builds. The stamp comes first: the DEPFILE
 # names it.
+if(TARGET rex::rexglue)
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/codegen.build.stamp"
            ${REXGLUE_ENTRYPOINT_GENERATED_SOURCES}
@@ -125,6 +126,14 @@ add_custom_command(
 )
 add_custom_target(crackdown2_codegen
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/codegen.build.stamp")
+else()
+    # Cross builds (Android) have no host codegen tool: the generated sources
+    # must already exist from a host build.
+    if(NOT REXGLUE_ENTRYPOINT_GENERATED_SOURCES)
+        message(FATAL_ERROR "Run codegen on the host first (generated/default is empty)")
+    endif()
+    add_custom_target(crackdown2_codegen)
+endif()
 
 # Include DLL module shared library targets if codegen has generated them
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/dll_targets.cmake")

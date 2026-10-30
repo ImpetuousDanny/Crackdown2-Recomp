@@ -22,11 +22,25 @@ set(CRACKDOWN2_SOURCES
 
 if(WIN32)
     add_executable(crackdown2 WIN32 ${CRACKDOWN2_SOURCES})
+elseif(ANDROID)
+    # SDLActivity loads libmain.so and calls its SDL_main; the generated code
+    # and the SDK runtime come along as shared libraries in the APK.
+    add_library(crackdown2 SHARED ${CRACKDOWN2_SOURCES})
+    set_target_properties(crackdown2 PROPERTIES OUTPUT_NAME main)
 else()
     add_executable(crackdown2 ${CRACKDOWN2_SOURCES})
 endif()
 
 rexglue_setup_target(crackdown2 GPU_PLUGINS xenos)
+
+# In-tree SDK builds (Android) do not export the ImGui/RenderDoc include
+# directories that rex/rex_app.h needs; the installed SDK ships them.
+if(TARGET imgui)
+    target_link_libraries(crackdown2 PRIVATE imgui::imgui)
+endif()
+if(TARGET renderdoc)
+    target_link_libraries(crackdown2 PRIVATE renderdoc)
+endif()
 
 
 # Windows application/taskbar icon (resources/crackdown2.rc -> crackdown2.ico).
