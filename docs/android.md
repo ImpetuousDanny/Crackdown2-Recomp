@@ -10,7 +10,7 @@ the rexglue Vulkan backend. Research notes first, then the state of the port.
 | --- | --- |
 | Recompiled game code (`generated/`, 256 translation units, ~270 MB of C++) | Portable. It uses the SDK's `simde`-based PowerPC vector helpers, which map SSE to NEON on arm64. One guest symbol (`__errno`) clashed with Bionic and is renamed `cd2___errno` in `default_functions.toml`. |
 | rexglue SDK runtime (`librexruntime.so`) | Had Android hooks (platform macro, ashmem memory, Vulkan Android surface) but no build path. Patched: see *SDK changes*. |
-| GPU plugin (`librexgpu-xenos.so`, Vulkan) | Builds for Android. The same Vulkan backend renders with a colour tint and missing UI text on Intel Linux, so correctness on mobile GPUs is unknown until tested. |
+| GPU plugin (`librexgpu-xenos.so`, Vulkan) | Builds for Android. The dark/tinted output that the Vulkan backend showed on every GPU (Intel Linux, AMD Windows, PowerVR) was a shader-translator bug, fixed by SDK patch 0006; with it the title screen and gameplay match D3D12 on Linux. |
 | Windowing, input, lifecycle | SDL3 for Android (Java `SDLActivity` + `libSDL3.so`); game `GameActivity` passes data paths as arguments. Touch controls do not exist yet: use a Bluetooth or USB gamepad. |
 | Audio | SDL3 audio on Android (AAudio/OpenSL inside SDL). Untested. |
 | Build | `tools/build_android.sh` runs CMake with the NDK toolchain (SDK in-tree via `REXSDK_DIR`), copies the `.so` files into `android/app/src/main/jniLibs/arm64-v8a` and runs Gradle. Codegen stays a host step: `generated/default` must exist from a PC build. |
@@ -75,6 +75,11 @@ the rexglue Vulkan backend. Research notes first, then the state of the port.
 * Pointer tagging: the manifest sets `allowNativeHeapPointerTagging="false"`
   so host pointers keep a clean top byte (the runtime mixes host pointers and
   guest addresses in places); not yet shown to matter.
+* Rendering: the first runs showed only a very dark logo on black. That was
+  not the PowerVR driver: the SDK's SPIR-V translator read a texture's
+  exponent bias from the wrong fetch-constant word, so any texture with a
+  LOD bias was scaled by a large power of two (SDK patch 0006). The same bug
+  darkened or tinted the Vulkan backend on Intel and AMD desktops.
 * Orientation: SDL re-applies its own orientation when the window is created,
   which turned the phone to portrait; `GameActivity` overrides
   `setOrientationBis` to force landscape.

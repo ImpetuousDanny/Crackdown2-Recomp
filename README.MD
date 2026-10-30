@@ -4,8 +4,8 @@ A native PC port of Crackdown 2 (Xbox 360) built with the [rexglue SDK](https://
 game's executable is statically recompiled to C++, the SDK provides the Xbox runtime and a GPU translation layer.
 
 **Status: playable on Windows.** The whole game runs on Windows 11 with Direct3D 12, keyboard and mouse or a gamepad,
-at the game's 30 FPS cap over most of Pacific City (22-27 FPS in the densest blocks on a laptop). Linux builds boot but
-the Vulkan backend still renders with missing UI text and a colour tint. Audio is unchanged from upstream.
+at the game's 30 FPS cap over most of Pacific City (22-27 FPS in the densest blocks on a laptop). Linux builds boot and,
+with SDK patch 0006, the Vulkan backend renders the title screen and gameplay correctly. Audio is unchanged from upstream.
 Latest build: [preview-20261030.1](https://github.com/ImpetuousDanny/Crackdown2-Recomp/releases/tag/preview-20261030.1).
 
 **No game data is included.** You need your own disc dump and Title Update 5.
@@ -86,7 +86,9 @@ page refresh off (they cost most of the frame rate), mouse sensitivity 3.
 * Dense city blocks dip below 30 FPS on laptop CPUs: the backend submits ~12,000 draws per frame on one thread.
   PERFORMANCE MODE holds 30 by not drawing the most distant environment tier, so far landmarks pop in. Details and
   measurements in [docs/performance.md](docs/performance.md).
-* The SDK's Vulkan backend (Linux) renders with a colour tint and missing UI text; D3D12 on Windows is the working path.
+* The SDK's Vulkan backend needs [SDK patch 0006](patches/rexglue-sdk/README.md) (a shader-translator fix); without it
+  the scene renders dark or colour-tinted on every GPU. The prebuilt 0.10.0 plugin does not have it, so Linux and Android
+  builds use the patched plugin and Windows should stay on D3D12 until a release ships the patched Vulkan plugin.
 
 ## DLC
 
