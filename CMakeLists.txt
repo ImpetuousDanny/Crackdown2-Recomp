@@ -24,6 +24,40 @@ endif()
 
 include(generated/rexglue.cmake)
 
+# rexglue 0.10.0 ignores [analysis] max_jump_table_entries from the manifest
+# (fixed by SDK patch 0005, not in the prebuilt tool), and the animation
+# attribute loader needs a 519-entry switch table: with the default cap of 512
+# it traps on attribute ids 512-517 while loading the game database. Run the
+# codegen tool through a wrapper that sets REX_MAX_JUMP_TABLE_ENTRIES=519 so
+# every build regenerates correct code. (generated/rexglue.cmake is codegen
+# output, so this lives here.)
+if(TARGET rex::rexglue)
+    get_target_property(_rexglue_imported rex::rexglue IMPORTED)
+    if(_rexglue_imported)
+        get_target_property(_rexglue_real rex::rexglue IMPORTED_LOCATION_RELEASE)
+        if(NOT _rexglue_real)
+            get_target_property(_rexglue_real rex::rexglue IMPORTED_LOCATION)
+        endif()
+        if(_rexglue_real AND NOT _rexglue_real MATCHES "rexglue_codegen_wrapper")
+            if(CMAKE_HOST_WIN32)
+                file(TO_NATIVE_PATH "${_rexglue_real}" _rexglue_real_native)
+                set(_rexglue_wrapper "${CMAKE_BINARY_DIR}/rexglue_codegen_wrapper.cmd")
+                file(WRITE "${_rexglue_wrapper}"
+                     "@echo off\r\nset REX_MAX_JUMP_TABLE_ENTRIES=519\r\n\"${_rexglue_real_native}\" %*\r\n")
+            else()
+                set(_rexglue_wrapper "${CMAKE_BINARY_DIR}/rexglue_codegen_wrapper.sh")
+                file(WRITE "${_rexglue_wrapper}"
+                     "#!/bin/sh\nREX_MAX_JUMP_TABLE_ENTRIES=519 exec \"${_rexglue_real}\" \"$@\"\n")
+                file(CHMOD "${_rexglue_wrapper}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                     GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+            endif()
+            set_target_properties(rex::rexglue PROPERTIES
+                IMPORTED_LOCATION "${_rexglue_wrapper}"
+                IMPORTED_LOCATION_RELEASE "${_rexglue_wrapper}")
+        endif()
+    endif()
+endif()
+
 # Sources
 set(CRACKDOWN2_SOURCES
     src/main.cpp
