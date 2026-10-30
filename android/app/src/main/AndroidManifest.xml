@@ -12,6 +12,8 @@
         android:appCategory="game"
         android:isGame="true"
         android:allowNativeHeapPointerTagging="false">
+        <!-- Lets `simpleperf` / Android Studio profile the release build from adb shell. -->
+        <profileable android:shell="true" />
         <activity
             android:name=".GameActivity"
             android:label="Crackdown 2 Recomp"

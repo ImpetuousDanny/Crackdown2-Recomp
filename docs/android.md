@@ -97,6 +97,18 @@ the rexglue Vulkan backend. Research notes first, then the state of the port.
   `files/user`) and the open city render correctly; about 20 FPS with
   `--c2_performance_mode=true`. `--audio_maxqframes=32` in `files/args.txt`
   for audio crackle. The in-game restart option quits on Android.
+* Performance (Pixel 10 Pro, city): about 20 FPS. `perf_event` is blocked on
+  this production build even with `security.perf_harden=0`, so the game has an
+  opt-in signal sampler: `--c2_cpu_sample_after=150 --c2_cpu_sample_seconds=15`
+  writes per-thread hot addresses and runtime/game callers to
+  `files/user/cpu_samples.txt` (symbolise with llvm-symbolizer / llvm-nm against
+  the unstripped `libmain.so` and `librexruntime.so`). It showed two guest
+  threads spinning in the SDK's `WaitMultiple` (fixed, SDK patch 0009); after
+  that the main game thread spends ~75% of its time in `D3D::BlockOnFence`, i.e.
+  waiting for the GPU, and the GPU sits at its top clock (1094 MHz). FIFO
+  presentation, native MSAA off and render-area shrinking (SDK patch 0010) did
+  not move the displayed rate; the remaining cost is the game's ~3,000 draws per
+  frame through translated Xenos shaders.
 * Orientation: SDL re-applies its own orientation when the window is created,
   which turned the phone to portrait; `GameActivity` overrides
   `setOrientationBis` to force landscape.
