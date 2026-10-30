@@ -60,6 +60,25 @@ the rexglue Vulkan backend. Research notes first, then the state of the port.
   cache live in the app's files directory); GPU plugin loaded by soname;
   logcat sink (tag `rexglue`); `AndroidInitialize` for memory and threads.
 
+## First runs (Pixel 10 Pro, 2026-10-30)
+
+* The runtime starts, maps the guest address space, loads the XEX and the title
+  update, creates a Vulkan swapchain on the PowerVR driver and runs guest code
+  (file I/O, audio endpoint, shader pipelines) from `SDLActivity`.
+* First blocker: a `brk` trap while loading the game database. The animation
+  attribute loader's switch table has 518 entries but the recompiler capped
+  jump tables at 512 (`max_jump_table_entries` is a codegen cvar that SDK
+  0.10.0 does not read from the manifest; SDK patch 0005 fixes that, and
+  `tools/build_android.sh` also passes it through `REX_MAX_JUMP_TABLE_ENTRIES`).
+  Attribute ids 512-516 occur in the game data, so the Windows build carries
+  the same hole and should be regenerated with the fix.
+* Pointer tagging: the manifest sets `allowNativeHeapPointerTagging="false"`
+  so host pointers keep a clean top byte (the runtime mixes host pointers and
+  guest addresses in places); not yet shown to matter.
+* Orientation: SDL re-applies its own orientation when the window is created,
+  which turned the phone to portrait; `GameActivity` overrides
+  `setOrientationBis` to force landscape.
+
 ## Building and installing
 
 ```

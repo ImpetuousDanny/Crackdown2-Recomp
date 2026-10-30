@@ -10,7 +10,8 @@
         android:largeHeap="true"
         android:extractNativeLibs="true"
         android:appCategory="game"
-        android:isGame="true">
+        android:isGame="true"
+        android:allowNativeHeapPointerTagging="false">
         <activity
             android:name=".GameActivity"
             android:label="Crackdown 2 Recomp"

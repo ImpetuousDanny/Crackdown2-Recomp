@@ -9,6 +9,19 @@ project(crackdown2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Cross builds (Android) cannot build the codegen tool, but generated/rexglue.cmake
+# still runs it as a host step whenever the manifest or its inputs change. Point
+# REXGLUE_HOST_TOOL at a host build of the rexglue CLI (an installed SDK's
+# bin/rexglue works).
+if(CMAKE_CROSSCOMPILING AND NOT TARGET rex::rexglue)
+    set(REXGLUE_HOST_TOOL "" CACHE FILEPATH "Host rexglue CLI used for codegen when cross-compiling")
+    if(NOT REXGLUE_HOST_TOOL OR NOT EXISTS "${REXGLUE_HOST_TOOL}")
+        message(FATAL_ERROR "Cross-compiling: set REXGLUE_HOST_TOOL to a host rexglue executable")
+    endif()
+    add_executable(rex::rexglue IMPORTED)
+    set_target_properties(rex::rexglue PROPERTIES IMPORTED_LOCATION "${REXGLUE_HOST_TOOL}")
+endif()
+
 include(generated/rexglue.cmake)
 
 # Sources

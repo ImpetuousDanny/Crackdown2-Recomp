@@ -1,6 +1,6 @@
 # rexglue SDK patches
 
-Patches against rexglue SDK v0.10.0. 0001-0003 are optional on PC: the prebuilt SDK works without them; apply them only if you
+Patches against rexglue SDK v0.10.0. 0001-0003 are optional on PC and 0005 only matters when running codegen: the prebuilt SDK works without them; apply them only if you
 build the SDK from source (`git clone --recursive --branch v0.10.0 https://github.com/rexglue/rexglue-sdk.git`, then
 `git apply <this repo>/patches/rexglue-sdk/*.patch` inside the clone and build with its `win-amd64` / `linux-amd64`
 preset). Drop the resulting `rexgpu-xenos*.dll`/`.so` **and** the matching `rexruntime*` library beside the game
@@ -16,5 +16,7 @@ executable together: the runtime and the GPU plugin from different builds are no
 | 0003 | Vulkan backend: a transfer pass and a draw pass into the same framebuffer are told apart by the transfer destination view, so a draw after an ownership transfer no longer reuses the transfer's render pass. Adds the debug cvars `gpu_log_textures` (log every host texture and render target creation) and `gpu_ignore_gamma_ramp` (keep the identity gamma ramp), and dumps translated SPIR-V when `dump_shaders` is set (parity with the D3D12 backend). | Diagnostic aids for the Vulkan colour-tint investigation; no measured performance effect. |
 
 | 0004 | Android (arm64) port of the SDK: `android-arm64` CMake platform (no host tools when cross-compiling, 16 KiB page alignment, SDL3 shared, `-fexperimental-library` for `std::jthread`), AAPCS64 fiber context switch (Bionic has no `makecontext`), libc++ gaps (`std::from_chars` for floats, `clock_time_conversion`), `ANativeWindow` presenter surface with background/foreground reattachment, `SDL_main` entry through SDL's activity (`WindowedApp::GetSoleCreator`), app folder from `REX_APP_FOLDER`, GPU plugin loaded by soname, logcat sink, no robust mutexes on Bionic. Required for the Android build; a no-op on other platforms. See [docs/android.md](../../docs/android.md). | Builds and starts on a Pixel 10 Pro (PowerVR, Vulkan 1.4); game testing in progress. |
+
+| 0005 | Codegen: honour `[analysis] max_jump_table_entries` from the manifest (0.10.0 reads the other `[analysis]` keys but leaves this one at its default of 512). Crackdown 2's manifest asks for 519 because one switch table in the animation attribute loader has 518 entries; with the cap at 512 the generated `switch` traps on attribute ids 512-517 (`__builtin_trap`: `ud2` on x86, `brk` on arm64) when the global level loads. Until the SDK carries the fix, `tools/build_android.sh` and `generated/rexglue.cmake` users can pass `--max_jump_table_entries=519` or set `REX_MAX_JUMP_TABLE_ENTRIES=519` for the codegen run. | Found on Android, where the trap killed the process while loading the game database (the data holds attribute ids 512-516). The Windows build was generated with the same cap and has not shown the crash; why it survives there is not established, so its generated code should be refreshed with the fix as well. |
 
 The big win needs no patch: pass `--clear_memory_page_state=false` (see the README's Performance section).

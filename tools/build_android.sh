@@ -17,8 +17,15 @@ BUILD="$ROOT/out/build/android-arm64"
 CONFIG="${CONFIG:-Release}"
 step="${1:-all}"
 
+# Host rexglue CLI for the codegen step (a host build of the patched SDK, else
+# the prebuilt SDK's bin/rexglue).
+HOST_TOOL="${REXGLUE_HOST_TOOL:-$( (ls "$SDK_SRC"/out/build/linux-amd64/src/rexglue/rexglue "$ROOT"/../sdk-0.10.0/linux-amd64/bin/rexglue 2>/dev/null || true) | head -1)}"
+# rexglue 0.10.0 ignores [analysis] max_jump_table_entries in the manifest
+# (SDK patch 0005 fixes that); the environment override reaches both tools.
+export REX_MAX_JUMP_TABLE_ENTRIES=519
+
 configure() {
-  "$CMAKE" -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
+  "$CMAKE" -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" -DREXGLUE_HOST_TOOL="$HOST_TOOL" \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE="$CONFIG" -DREXSDK_DIR="$SDK_SRC" \

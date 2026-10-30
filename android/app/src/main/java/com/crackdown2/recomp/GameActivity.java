@@ -59,6 +59,14 @@ public final class GameActivity extends SDLActivity {
             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
   }
 
+  // SDL applies its own orientation (from the SDL_ORIENTATIONS hint, unset
+  // here) when the window is created, which turned the phone to portrait and
+  // gave the game a 1080x2410 swapchain. The game is landscape only.
+  @Override
+  public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+    setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+  }
+
   @Override
   protected String[] getLibraries() {
     // libmain.so pulls librexruntime.so in through DT_NEEDED; the GPU plugin is
