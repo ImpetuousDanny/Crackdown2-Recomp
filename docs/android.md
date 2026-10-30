@@ -88,6 +88,15 @@ the rexglue Vulkan backend. Research notes first, then the state of the port.
   time). Also: `tools/build_android.sh` now packs the GPU plugin from the
   SDK's output folder; the copy beside the game was not rebuilt when only
   the plugin changed.
+* In the city: the whole frame (HUD included) was red. The backend's
+  per-bit stencil copy (used because PowerVR has no stencil export) never
+  tested the stencil bits for depth sources, so stencil became 0xFF and the
+  game's depth-as-colour reinterpretation put it in red (SDK patch 0008).
+* State after these fixes (Pixel 10 Pro, Razer Kishi V2 over USB-C): intro
+  movies, menus, DLC (installed with `tools/dlc_install.py` into
+  `files/user`) and the open city render correctly; about 20 FPS with
+  `--c2_performance_mode=true`. `--audio_maxqframes=32` in `files/args.txt`
+  for audio crackle. The in-game restart option quits on Android.
 * Orientation: SDL re-applies its own orientation when the window is created,
   which turned the phone to portrait; `GameActivity` overrides
   `setOrientationBis` to force landscape.
