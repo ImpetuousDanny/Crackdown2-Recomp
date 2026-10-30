@@ -153,8 +153,7 @@ def main():
     if os.name == "nt":
         print(r"  .\tools\run_cd2.ps1")
     else:
-        print(f"  crackdown2 --game_data_root=\"{assets}\" --update_data_root=\"{update}\" --gpu_plugin=xenos"
-              " --readback_memexport=false --clear_memory_page_state=false")
+        print("  ./tools/run_cd2.sh")
 
 
 if __name__ == "__main__":

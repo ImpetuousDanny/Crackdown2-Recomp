@@ -1,5 +1,5 @@
 diff --git a/src/codegen/config.cpp b/src/codegen/config.cpp
-index 5da54a0..6d5e25f 100644
+index 5da54a0..7647843 100644
 --- a/src/codegen/config.cpp
 +++ b/src/codegen/config.cpp
 @@ -19,6 +19,7 @@
@@ -10,7 +10,7 @@ index 5da54a0..6d5e25f 100644
  #include <rex/logging.h>
  
  #include "codegen_logging.h"
-@@ -141,6 +142,16 @@ void ApplyToml(const toml::table& toml, RecompilerConfig& cfg, const std::string
+@@ -141,6 +142,20 @@ void ApplyToml(const toml::table& toml, RecompilerConfig& cfg, const std::string
      if (auto v = (*analysisTable)["large_function_threshold"].value<uint32_t>()) {
        MergeScalar(cfg.largeFunctionThreshold, *v, "analysis.large_function_threshold");
      }
@@ -20,6 +20,10 @@ index 5da54a0..6d5e25f 100644
 +    // unless the command line already set it.
 +    if (auto v = (*analysisTable)["max_jump_table_entries"].value<uint32_t>()) {
 +      if (rex::cvar::GetFlagSource("max_jump_table_entries") != rex::cvar::Source::kCommandLine) {
++        // The cvar is init-only and flags are finalised before the manifest is
++        // read, so a plain SetFlagByName is rejected silently. The override is
++        // the cvar module's only public way past that lock.
++        rex::cvar::testing::ScopedLifecycleOverride allow_init_only;
 +        rex::cvar::SetFlagByName("max_jump_table_entries", std::to_string(*v));
 +        REXCODEGEN_DEBUG("[config]   analysis.max_jump_table_entries = {}", *v);
 +      }

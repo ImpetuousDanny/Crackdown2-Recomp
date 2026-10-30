@@ -13,7 +13,7 @@ ANDROID_SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 NDK="${ANDROID_NDK:-$(ls -d "$ANDROID_SDK"/ndk/28.* 2>/dev/null | tail -1)}"
 CMAKE="${CMAKE:-$(ls -d "$ANDROID_SDK"/cmake/3.3*/bin/cmake 2>/dev/null | tail -1)}"
 NINJA="$(dirname "$CMAKE")/ninja"
-BUILD="$ROOT/out/build/android-arm64"
+BUILD="${BUILD_DIR:-$ROOT/out/build/android-arm64}"
 CONFIG="${CONFIG:-Release}"
 step="${1:-all}"
 

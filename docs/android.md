@@ -120,6 +120,10 @@ tools/build_android.sh            # configure + natives + APK
 tools/build_android.sh install    # adb install
 ```
 
+`REXSDK_DIR` points at the rexglue-sdk source tree (default `../rexglue-sdk`) with every patch from
+`patches/rexglue-sdk/` applied; `BUILD_DIR` overrides the build folder (default `out/build/android-arm64`).
+The APK is signed with the debug key so it can be sideloaded.
+
 Game data goes to the app's external files directory (no permission needed):
 
 ```
