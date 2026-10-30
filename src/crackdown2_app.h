@@ -36,6 +36,7 @@ class Crackdown2App : public rex::ReXApp {
     InstallQuietKernelStubs();
     InstallSerializedXInput();
     LoadRequestedGpuBackend(config);
+    c2::ApplyAspectRatio();
     c2::StartProfilingIfRequested();
   }
 
@@ -52,6 +53,9 @@ class Crackdown2App : public rex::ReXApp {
         if (window()) window()->RequestClose();
       });
     });
+
+    // The GPU plugin's cvars exist by now; all three are hot-reloadable.
+    c2::ApplyGameDefaults();
 
     graphics_menu_ = std::make_unique<GraphicsMenu>(drawer);
     rex::ui::RegisterBind("bind_graphics_menu", "F5", "Toggle the Graphics menu",
@@ -71,12 +75,35 @@ class Crackdown2App : public rex::ReXApp {
     // TeleportPlayer that only makes sense once a save is loaded).
     rex::ui::RegisterBind("bind_console_startup", "F8", "Run the --c2_console_startup console commands",
                           [] { c2::RunStartupCommands(); });
+
+    // Render-pass diagnostic toggles (cheat mode only). One key = one console
+    // toggle, so there is no even/odd parity issue from the startup list running
+    // twice. Used to isolate which pass costs the most in heavy zones.
+    if (rex::cvar::Query<bool>("c2_cheats")) {
+      rex::ui::RegisterBind("diag_shadows", "F7", "DIAG: toggle shadows",
+                            [] { c2::QueueConsoleCommand("toggleshadows"); });
+      rex::ui::RegisterBind("diag_alpha", "F9", "DIAG: toggle alpha pass",
+                            [] { c2::QueueConsoleCommand("togglealphapass"); });
+      rex::ui::RegisterBind("diag_lights", "F10", "DIAG: toggle global lights",
+                            [] { c2::QueueConsoleCommand("togglegloballights"); });
+      rex::ui::RegisterBind("diag_opaque", "F11", "DIAG: toggle opaque pass",
+                            [] { c2::QueueConsoleCommand("toggleopaquepass"); });
+      rex::ui::RegisterBind("diag_clutter", "F12", "DIAG: toggle clutter",
+                            [] { c2::QueueConsoleCommand("toggleclutter"); });
+    }
   }
 
   void OnShutdown() override {
+    // Window close / Alt+F4 skips the menu's quit path; persist settings here too.
+    c2::SaveSettings();
     rex::ui::UnregisterBind("bind_graphics_menu");
     rex::ui::UnregisterBind("bind_mouse_look");
     rex::ui::UnregisterBind("bind_console_startup");
+    rex::ui::UnregisterBind("diag_shadows");
+    rex::ui::UnregisterBind("diag_alpha");
+    rex::ui::UnregisterBind("diag_lights");
+    rex::ui::UnregisterBind("diag_opaque");
+    rex::ui::UnregisterBind("diag_clutter");
   }
 
   // Override virtual hooks for customization:

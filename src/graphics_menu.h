@@ -57,12 +57,14 @@ class GraphicsMenu : public rex::ui::ImGuiDialog {
     BoolRow("Native 2x MSAA", "native_2x_msaa");
     BoolRow("GPU memexport readback (off = much faster)", "readback_memexport");
     BoolRow("GPU page-state refresh every frame (off = faster)", "clear_memory_page_state");
+    BoolRow("Performance mode (hide far environment detail, steady 30)", "c2_performance_mode");
 
     ImGui::Separator();
 
     ComboRow("Upscaling / output", "present_effect",
              {"bilinear", "cas", "fsr", "fsr2", "fsr3"});
-    ComboRow("Resolution", "resolution",
+    ComboRow("Aspect ratio *", "c2_aspect_ratio", {"auto", "16:9", "16:10", "21:9", "32:9"});
+    ComboRow("Window resolution *", "resolution",
              {"", "1280x720", "1920x1080", "2560x1440", "3840x2160"});
     IntSliderRow("Internal res scale *", "draw_resolution_scale_x", 1, 4);
     ComboRow("GPU backend *", "c2_gpu_backend", {"any", "d3d12", "vulkan"});

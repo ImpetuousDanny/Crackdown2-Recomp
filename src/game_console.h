@@ -32,6 +32,15 @@ void SetQuitHandler(std::function<void()> handler);
 // from the game thread; the handler defers the window close to the UI thread.
 void RequestQuit();
 
+// Save the user-changed cvars to <exe>/crackdown2.toml (done on quit/restart).
+void SaveSettings();
+// Derive the guest video mode and window size from c2_aspect_ratio and the
+// RESOLUTION preset. Call before the window and the guest exist (OnPreSetup).
+void ApplyAspectRatio();
+// Apply this game's preferred defaults (vsync/readback/page refresh off) to
+// cvars nothing else has set. Call once the GPU plugin's cvars exist.
+void ApplyGameDefaults();
+
 // Save the current cvars to crackdown2.toml and relaunch the game (so
 // restart-only display settings take effect), then quit this instance. The
 // relaunch waits for this process to exit first. Windows only; elsewhere it

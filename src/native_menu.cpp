@@ -29,6 +29,8 @@
 // The rows render with the game's font, cursor, sounds and legend, scroll with
 // the stock rows, and change real engine cvars or run console commands.
 
+#include <cmath>
+#include <cstdlib>
 #include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/ppc.h>
@@ -149,8 +151,12 @@ std::vector<Row> display_rows() {
        {kOnOff[0], kOnOff[1]}},
       {"FPS COUNTER", "SHOW THE FRAME RATE OVERLAY", RowKind::kCvar, "c2_fps_display",
        {kOnOff[0], kOnOff[1]}},
-      {"RESOLUTION", "WINDOW / OUTPUT RESOLUTION (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
-       "resolution",
+      {"ASPECT RATIO", "SHAPE OF THE RENDERED IMAGE: AUTO MATCHES YOUR MONITOR (NO BARS), A DIFFERENT SHAPE SHOWS "
+       "BARS. WIDER = MORE FIELD OF VIEW, HUD STAYS IN THE CORNERS (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
+       "c2_aspect_ratio",
+       {{"auto", "AUTO"}, {"16:9", "16:9"}, {"16:10", "16:10"}, {"21:9", "21:9"}, {"32:9", "32:9"}}},
+      {"RESOLUTION", "WINDOW HEIGHT WHEN NOT FULLSCREEN; THE WIDTH FOLLOWS THE ASPECT RATIO (TAKES EFFECT AFTER "
+       "RESTART)", RowKind::kCvar, "resolution",
        {{"", "AUTO"}, {"1280x720", "720P"}, {"1920x1080", "1080P"}, {"2560x1440", "1440P"}, {"3840x2160", "4K"}}},
       {"RENDER SCALE", "INTERNAL RESOLUTION MULTIPLIER (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
        "draw_resolution_scale_x",
@@ -170,6 +176,9 @@ std::vector<Row> display_rows() {
        "readback_memexport", {kOnOff[0], kOnOff[1]}},
       {"GPU PAGE REFRESH", "RE-UPLOAD ALL CPU-WRITTEN GPU MEMORY EVERY FRAME. OFF IS ~12% FASTER IN GAME",
        RowKind::kCvar, "clear_memory_page_state", {kOnOff[0], kOnOff[1]}},
+      {"PERFORMANCE MODE", "HIDE THE MOST DISTANT ENVIRONMENT DETAIL FOR A STEADY 30 FPS IN DENSE ZONES "
+       "(FAR LANDMARKS LIKE THE AGENCY TOWER DISAPPEAR). TAKES EFFECT IMMEDIATELY.",
+       RowKind::kCvar, "c2_performance_mode", {kOnOff[0], kOnOff[1]}},
       {"APPLY & RESTART", "SAVE THESE SETTINGS AND RESTART THE GAME (NEEDED FOR RESOLUTION / RENDER SCALE / "
        "MSAA / AA CHANGES). PRESS AGAIN TO CONFIRM.", RowKind::kApplyRestart, nullptr, {kNone[0]}},
   };
@@ -182,7 +191,7 @@ std::vector<Row> control_rows() {
       {"MOUSE LOOK", "MOUSE DRIVES THE RIGHT STICK (F6 ALSO TOGGLES)", RowKind::kCvar, "mnk_mouse",
        {kOnOff[0], kOnOff[1]}},
       {"MOUSE SENSITIVITY", "RIGHT STICK SPEED PER MOUSE MOVEMENT", RowKind::kCvar, "mnk_sensitivity",
-       {{"1", "1"}, {"2", "2"}, {"3", "3"}, {"5", "5"}, {"8", "8"}, {"10", "10"}}},
+       {{"0.5", "0.5"}, {"1", "1"}, {"1.5", "1.5"}, {"2", "2"}, {"3", "3"}, {"4", "4"}, {"6", "6"}, {"8", "8"}}},
       {"GAMEPAD DRIVER", "SDL (ANY PAD) OR XINPUT (TAKES EFFECT AFTER RESTART)", RowKind::kCvar,
        "input_backend",
        {{"sdl", "SDL"}, {"xinput", "XINPUT"}}},
@@ -244,6 +253,14 @@ size_t current_choice(const Row& row) {
   std::string cur = rex::cvar::GetFlagByName(row.cvar);
   for (size_t i = 0; i < row.choices.size(); ++i) {
     if (cur == row.choices[i].value) return i;
+  }
+  // Numeric cvars print with trailing zeros ("3.000000"): compare as numbers.
+  char* end = nullptr;
+  double value = std::strtod(cur.c_str(), &end);
+  if (end && end != cur.c_str() && *end == '\0') {
+    for (size_t i = 0; i < row.choices.size(); ++i) {
+      if (std::fabs(std::strtod(row.choices[i].value, nullptr) - value) < 1e-6) return i;
+    }
   }
   // bool cvars may serialize as 0/1
   if (cur == "1" || cur == "0") return cur == "1" ? 1 : 0;

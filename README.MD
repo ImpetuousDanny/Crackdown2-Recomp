@@ -23,7 +23,9 @@ zips; the steps below turn your disc into the `assets` folder the recomp reads.
      ```
      .\tools\run_cd2.ps1
      ```
-     The zip holds `crackdown2.exe`, the two rexglue SDK DLLs, `tools\`, `docs\` and this README. No game data.
+     The zip holds `crackdown2.exe`, the two rexglue SDK DLLs (built from the v0.10.0 source with the patches under
+     `patches/rexglue-sdk/`, which the keyboard/mouse look and settings saving rely on), `tools\`, `docs\` and this
+     README. No game data.
    * *Compile it yourself*: run the setup with `--dest .` (or point `--iso` at the folder you extracted into
      `assets\`), then follow *To build* / *Windows build* below. Codegen runs as the first build step and needs
      `assets\default.xex` and `assets\default.xexp`; a clean Windows build takes about five minutes plus codegen.
@@ -33,6 +35,22 @@ zips; the steps below turn your disc into the `assets` folder the recomp reads.
    START, which is Enter on the keyboard; the launcher turns keyboard/mouse gamepad emulation on by default (`-NoKeyboard` to disable it).
    Options > Display holds the graphics, input and (with `-Cheats`) cheat rows; F5 opens the overlay with
    a developer-console prompt; F4 rebinds keys. See *Controls* and *Performance* for the defaults the launcher applies.
+
+## Screenshots
+
+RTX 3050 Ti laptop on a 3440x1440 monitor, default settings (2x MSAA, 16x anisotropic filtering, no post AA), FPS
+counter off.
+
+| ASPECT RATIO = AUTO (21:9 on this monitor) | ASPECT RATIO = 16:9 (original framing, side bars) |
+| --- | --- |
+| ![City at 21:9](docs/screenshots/city_21x9.png) | ![City at 16:9 with side bars](docs/screenshots/city_16x9_on_ultrawide.png) |
+
+![Rooftop at 21:9 with the default settings](docs/screenshots/rooftop_21x9.png)
+
+![Over Pacific City in the Agency helicopter, 21:9](docs/screenshots/helicopter_21x9.png)
+
+The wider aspect is real field of view, not stretching: the game derives its projection and HUD layout from the video
+mode the recomp reports (see *Menus and settings*).
 
 ## Requirements:
 - [Rexglue SDK 0.10.0](https://github.com/rexglue/rexglue-sdk)
@@ -123,15 +141,24 @@ invalidation on GFx texture updates; had no effect, so the missing text is not a
 * **F4** opens the SDK's settings overlay (every cvar by category, with **Rebind** buttons for the keyboard binds and a
   **Save to config** button that writes `crackdown2.toml` next to the exe); **F3** the debug overlay.
 * **F5** opens this project's ImGui menu (`src/graphics_menu.h`): v-sync, fullscreen, FPS counter, 2x MSAA, upscaling
-  filter, resolution, internal render scale, GPU backend, keyboard/mouse mode, mouse look, mouse sensitivity, and a text
-  box that sends commands to the game's developer console (below).
+  filter, resolution, internal render scale, GPU backend, performance mode, keyboard/mouse mode, mouse look, mouse
+  sensitivity, and a text box that sends commands to the game's developer console (below).
+* **Aspect ratio** (Options > Display or F5, `--c2_aspect_ratio=auto|16:9|16:10|21:9|32:9|W:H`): the game takes its
+  projection and HUD layout from the Xbox video mode it is given, so the recomp derives that mode from the chosen aspect
+  (720 lines, width to match). AUTO matches the primary monitor: on an ultrawide the world is rendered at 21:9 with a
+  wider field of view and the HUD in the corners, no stretching and no bars; pick 16:9 to get the original framing with
+  side bars instead. RESOLUTION is the window height when not fullscreen (the width follows the aspect). Both need a
+  restart (APPLY & RESTART).
+* Changes made in any of these menus are written to `crackdown2.toml` next to the exe when the game exits (EXIT row,
+  APPLY & RESTART, or closing the window), and loaded again at the next start. Command-line flags still override the file.
 * **F6** toggles mouse look. With `--mnk_mouse=true` the mouse drives the right stick from startup; F6 releases the
-  cursor for the overlays and grabs it again. The SDK scales mouse movement per frame by `--mnk_sensitivity`
-  (default 1.0 is slow; try 5-10 for a desk mouse).
+  cursor for the overlays and grabs it again. The SDK scales mouse movement per frame by `--mnk_sensitivity`; the game
+  defaults it to 3.0 (the SDK's 1.0 barely moves the camera) and the Options > Display MOUSE SENSITIVITY row adjusts it.
 * **Native rows in the game's own option screens** (`src/native_menu.cpp`), drawn by the game's Scaleform menu with its
   font, cursor, tooltips and sounds. Press A on a row to cycle its value; the rows write real engine cvars:
-  * Graphics: V-SYNC, FULLSCREEN, FPS COUNTER, RESOLUTION, RENDER SCALE (1x-4x internal resolution), 2X MSAA,
-    ANTI-ALIASING (FXAA), ANISOTROPIC FILTER, UPSCALING FILTER. Rows marked "after restart" need a relaunch.
+  * Graphics: V-SYNC, FULLSCREEN, FPS COUNTER, ASPECT RATIO, RESOLUTION, RENDER SCALE (1x-4x internal resolution), 2X MSAA,
+    ANTI-ALIASING (FXAA), ANISOTROPIC FILTER, UPSCALING FILTER, GPU READBACK, GPU PAGE REFRESH, PERFORMANCE MODE
+    (see *Performance*). Rows marked "after restart" need a relaunch.
   * Input: KEYBOARD AND MOUSE, MOUSE LOOK, MOUSE SENSITIVITY, GAMEPAD DRIVER (SDL or XInput) and a reminder that key
     rebinding lives in the F4 overlay.
   * With `--c2_cheats=true`, a CHEAT MENU block follows (next section).
@@ -140,14 +167,41 @@ invalidation on GFx texture updates; had no effect, so the missing text is not a
   The row framework is documented in `docs/native_menu.md` (component ids, vtable slots, item/text object layout, the
   bctrl call sites used by the midasm hook). No game assets are modified.
 
+## Setting up on Windows, step by step
+
+1. Install [Python 3](https://www.python.org/downloads/windows/) (tick *Add python.exe to PATH*). It is only used by the
+   setup scripts, not by the game.
+2. Download `Crackdown2-Recomp-win-amd64.zip` from this fork's **Releases** page and extract it anywhere, e.g.
+   `C:\Games\Crackdown2`. It contains the game executable, the two rexglue SDK DLLs, `tools\`, `docs\` and this file -
+   and no game data.
+3. Put your own disc dump (ISO or extracted folder) and the Title Update 5 file somewhere, then from a PowerShell window
+   in the extracted folder run `python tools\setup_game.py --iso <game.iso> --tu <TU5 file>` (add `--dlc <package>` for
+   each DLC package you own). The script checks the hashes listed under *Hashes* and writes `cd2_game.json`.
+4. Start the game with `.\tools\run_cd2.ps1`. If PowerShell refuses to run scripts, use
+   `powershell -ExecutionPolicy Bypass -File tools\run_cd2.ps1` once, or `.\tools\run_cd2.ps1 -DesktopShortcut`, which
+   puts a *Crackdown 2* shortcut on the desktop that launches it that way from then on. Add `-Cheats` to either for the
+   cheat rows.
+5. On the START screen press **Enter**. Options > Display holds the graphics rows (aspect ratio, resolution, AA,
+   anisotropic filter, performance mode, ...) and the input rows; everything you change there is saved next to the exe
+   in `crackdown2.toml` when you exit. **F4** rebinds keys, **F5** opens the overlay, **F6** releases the mouse.
+6. Optional: the release's `crackdown2-shadercache.zip` removes first-run shader stutter; extract it and start with
+   `--cache_root="<path>\cache"` (or merge its `shaders` folder into your cache directory).
+
+Requirements: Windows 10/11 x64, a Direct3D 12 GPU (feature level 12_0; an RTX 3050 Ti laptop runs the city at 24-30
+FPS, see *Performance*), ~2 GB free for the extracted game. On a laptop with two GPUs, set `crackdown2.exe` to the
+high-performance GPU in Windows *Settings > System > Display > Graphics*.
+
 ## Controls
 
 * **Gamepad**: any SDL-recognised pad works out of the box (`--input_backend=sdl`, the default); `--input_backend=xinput`
   selects the Windows XInput driver instead. A pad and the keyboard/mouse device both map to player 1 and are merged, so
   there is nothing to switch.
-* **Keyboard and mouse** (`--mnk_mode`, plus `--mnk_mouse=true` for mouse look). Default binds: WASD = left stick,
-  arrows = right stick, Shift+arrows = d-pad, Space/; = A, Backspace/' = B, L = X, P = Y, Q/I = LT, E/O = RT, 1/3 =
-  bumpers, F/K = stick clicks, Enter/X = Start, Tab/Z = Back. Rebind with the F4 overlay (one key per bind) or set
+* **Keyboard and mouse** (`--mnk_mode`, plus `--mnk_mouse=true` for mouse look). Default binds follow the game's own
+  button roles: WASD = move, mouse = look, left button = fire (RT), right button = lock on (LT), Space = jump (A),
+  E = melee / hold to pick up objects (B), Q = enter or exit vehicle, lifts and supply points (Y), Shift = crouch
+  (left stick click), F = pick up weapon (X), R = reload (LB), G = grenade (RB), middle button or K = zoom (right
+  stick click), arrows = right stick, Shift+arrows = d-pad, Enter = Start, Tab = Back. Holding Shift does not block
+  WASD: a key only yields to a modifier combination when one is actually bound to it (arrows vs Shift+arrows). Rebind with the F4 overlay (one key per bind) or set
   `keybind_*` cvars on the command line / in `crackdown2.toml`, e.g. `--keybind_a="Space,LMB"`; a bind is a
   comma-separated list of key names, each optionally prefixed with `Shift+`, `Ctrl+` or `Alt+`, and `LMB`/`RMB`/`MMB`
   are valid names. Changes apply immediately.
@@ -196,15 +250,15 @@ room, turning the camera through twelve headings at one spot (`results/perf0c_*`
 | `--readback_memexport=false` | 36-45 FPS | 33-44 FPS |
 
 The runtime copies every memexport (GPU-to-memory) result back to the CPU by default, which stalls the whole GPU pipeline
-whenever the scene uses it. The game does not read those results on the CPU in anything observed so far, so the launcher
-(`tools/run_cd2.ps1`), the Options > Display **GPU READBACK** row and the F5 overlay all expose the switch; the launcher
-passes `--readback_memexport=false` unless you give it `-Readback`.
+whenever the scene uses it. The game does not read those results on the CPU in anything observed so far, so the game defaults it off
+(`ApplyGameDefaults` in `src/game_console.cpp`); the Options > Display **GPU READBACK** row and the F5 overlay expose the
+switch, and the launcher (`tools/run_cd2.ps1`) passes `--readback_memexport=true` if you give it `-Readback`.
 
 Second switch, found by profiling (see below): the runtime's `clear_memory_page_state` cvar (default on) forgets every
 CPU-uploaded page of GPU shared memory at the end of each frame, so the whole scene's vertex and index data (~20 MB in the
 tutorial room, ~800 MB/s) is copied to the GPU again every frame. The CPU write-watch already catches real changes, and
-the game renders identically with it off. The launcher passes `--clear_memory_page_state=false` unless you give it
-`-PageRefresh`; the Options > Display **GPU PAGE REFRESH** row and the F5 overlay expose it too. Same spot, same stepped
+the game renders identically with it off, so it is a game default too (`-PageRefresh` on the launcher turns it back
+on); the Options > Display **GPU PAGE REFRESH** row and the F5 overlay expose it as well. Same spot, same stepped
 turn, stock SDK: 37.5 FPS with it on, 42.2 FPS with it off.
 
 Where the rest goes: with both switches off the frame is bound by the SDK's "GPU Commands" thread, which runs at 100%
@@ -214,6 +268,20 @@ the recompiled CPU code nor the GPU itself is the limit. Per-draw costs on that 
 (uploads) ~23%, register writes ~29% before the SDK patch below, primitive processing ~10%, submission ~12%, AMD driver
 ~10%. Reducing that per-draw cost is SDK work; a patch that writes type-0 register ranges in bulk (as upstream Xenia does)
 cut register handling from 29% to 11% of the thread and is kept under `patches/rexglue-sdk/`.
+
+**Dense city zones** are a different, harder case. On an RTX 3050 Ti laptop (Ryzen 9 5900HS) the open city runs at the
+game's 30 FPS cap, but the densest districts drop to 22-24 FPS whichever way the GPU is configured. The profile there is
+flat: ~15,000 draw calls per frame at ~1.6 µs of backend work each (bindings, primitive processing, render-target and
+texture lookups, vertex-fetch residency - no single stage above 20%), plus ~0.6 µs per draw of command-stream parsing,
+on one core that the laptop's shared power budget holds at ~3.7 GHz. The GPU is idle-waiting, the frame-open fence wait
+is 0.2 ms, and process priority makes no difference; it is single-thread CPU throughput, and the Xenia-derived backend
+cannot be parallelised without a redesign. Everything that reduces draw calls visibly was measured: the LOD transition
+bias, occlusion toggles, crowd density, far-car culling and memexport readback (synchronous or the asynchronous batched
+variant in patch 0002) leave the draw count unchanged; only the engine's own `togglelod4env`, which stops drawing the
+most distant environment tier, cuts it enough (to ~500 draws) to hold 30. That is what the **PERFORMANCE MODE** row (and
+the F5 overlay / `--c2_performance_mode=true`) applies: a steady 30 in dense districts at the cost of far landmarks such
+as the Agency tower, which only appear once you get closer. Off by default; a faster desktop CPU (~35-40% more
+single-thread speed) is the other way to a locked 30 there.
 
 Things that did not help on this hardware (all within ±2 FPS run-to-run noise): `--occlusion_query_enable=false`,
 `--native_2x_msaa=false`, `--d3d12_bindless=false`, `--d3d12_tiled_shared_memory=false`,
