@@ -123,12 +123,25 @@ VS 2022 Build Tools 17.x (MSVC 14.44, Windows SDK 10.0.26100): run the configure
 finds the MSVC headers; a clean build takes about five minutes. The game must be started from an interactive desktop session:
 launched from a remote shell (WinRM/SSH, session 0) it logs `D3D12Presenter: Failed to create a swap chain for the HWND`.
 
-## Status (2026-10-28)
+## Status (2026-10-30)
 
 | Platform / backend | Result |
 | --- | --- |
-| Windows 11, Radeon 780M, D3D12 (`--c2_gpu_backend=d3d12`, the Windows default) | Playable: title, menus, Agent Setup and co-op lobby at 63-80 FPS with `--vsync=false` (the 30 FPS seen before was the vsync cap); the intro cutscene at ~68 FPS; the opening Agency tutorial room with full HUD at ~35 FPS. Keyboard/mouse via `--mnk_mode --mnk_mouse=true` (Enter = Start, Space = A, Tab = Back, WASD / arrows = sticks). |
-| Linux (Mint 22.3), Intel Iris Xe, Vulkan (Mesa ANV) | Boots to the Agency screen and the real-time intro at ~28 FPS, but all UI text and solid fills are missing and 3D scenes come out as single-channel tints (pure red / pure blue). |
+| Windows 11, RTX 3050 Ti Laptop, D3D12 (the Windows default) | **Playable in the open world** with keyboard and mouse: title, menus, co-op lobby, intro, tutorial and the whole city. 30 FPS (the game's cap) over most of Pacific City, 22-27 FPS in the densest blocks; v-sync and fullscreen on by default. Settings, keybinds and aspect ratio persist between runs. Latest build: [preview-20261030.1](https://github.com/ImpetuousDanny/Crackdown2-Recomp/releases/tag/preview-20261030.1). |
+| Windows 11, Radeon 780M, D3D12 | Playable: title, menus, Agent Setup and co-op lobby at 63-80 FPS uncapped, the intro cutscene at ~68 FPS, the opening Agency tutorial room with full HUD at ~35 FPS. |
+| Linux (Mint 22.3), Intel Iris Xe, Vulkan (Mesa ANV) | Boots to the Agency screen and the real-time intro at ~28 FPS, but all UI text and solid fills are missing and 3D scenes come out as single-channel tints (pure red / pure blue). Not re-tested since 2026-10-28; the changes since are Windows-side and in the SDK input and config code. |
+
+What works on Windows (D3D12):
+- Mouse look, left click fire, right click lock on, middle click zoom; keyboard on the game's own button roles (see *Controls*). Needs the patched SDK runtime shipped in the release zip, built from `patches/rexglue-sdk/`.
+- In-game Options > Display rows: resolution scale, MSAA, AA, anisotropic filtering, upscaling, v-sync, aspect ratio (AUTO / 16:9 / 16:10 / 21:9 / 32:9 with real extra field of view), window resolution, performance mode, GPU readback and page refresh, EXIT and APPLY & RESTART; F4 keybind overlay, F5 developer console, cheat menu behind `--c2_cheats`.
+- Saved settings in `crackdown2.toml` next to the exe (user-changed values only).
+- DLC packages via `tools\dlc_install.py`.
+
+Known issues:
+- RENDER SCALE above 1X removes the D3D12 device at boot (`DXGI_ERROR_INVALID_CALL`); leave it at 1X. If a saved toml has it set, delete the `draw_resolution_scale_*` lines.
+- Dense city blocks dip to 22-27 FPS on laptop CPUs: the Xenia-derived backend submits ~12,000 draws per frame on one thread (see *Performance*). PERFORMANCE MODE (opt-in) holds 30 but far landmarks pop.
+- The SDK's Vulkan backend renders with a colour tint and missing UI text on every platform tested; use D3D12.
+- Audio (XMA / Wwise) is unchanged from upstream.
 
 The Windows run proves the recompiled CPU side (same `generated/` code on both platforms) is fine; the Linux defects are in the
 GPU plugin's Vulkan path or the Intel driver. The SDK's prebuilt Windows plugin only contains the D3D12 backend, so the Vulkan
